@@ -18,3 +18,14 @@ def get_near_expiry_batches(location_id=None) -> list:
 
 """
 
+from datetime import date
+from .models import BatchLot
+
+
+def is_batch_sellable(batch_lot: BatchLot) -> bool:
+    if batch_lot.status != BatchLot.Status.ACTIVE:
+        return False
+    if batch_lot.expiry_date and batch_lot.expiry_date <= date.today():
+        return False
+    return True
+
