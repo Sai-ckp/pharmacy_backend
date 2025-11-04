@@ -33,6 +33,14 @@ INSTALLED_APPS = [
     'apps.compliance',
     'apps.reports',
     'apps.notifications',
+    # Dev A apps
+    'apps.accounts',
+    'apps.locations',
+    'apps.catalog',
+    'apps.inventory',
+    'apps.procurement',
+    'apps.settingsx',
+    'apps.governance',
     
 ]
 
