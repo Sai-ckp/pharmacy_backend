@@ -13,7 +13,7 @@ SECRET_KEY = 'q3$8zR!v9x@t5m#u2p%h1w&y4c^n6b7s-l0g+e=JkF9z#2Xy!8'
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -22,7 +22,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles', 
-    'rest_framework',  
+    # Third-party
+    'rest_framework',
+    'corsheaders',
+    # Local apps
+    'core',
     'apps.customers',
     'apps.sales',
     'apps.transfers',
@@ -34,6 +38,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -88,3 +93,16 @@ USE_L10N = True
 USE_TZ = True
 
 STATIC_URL = '/static/'
+
+# CORS and DRF (Dev A parity)
+CORS_ALLOW_ALL_ORIGINS = True
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+}
