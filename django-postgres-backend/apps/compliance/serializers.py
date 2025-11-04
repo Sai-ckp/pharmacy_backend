@@ -1,5 +1,6 @@
 from rest_framework import serializers
 <<<<<<< HEAD
+<<<<<<< HEAD
 from .models import Prescription, H1RegisterEntry, NDPSDailyEntry, RecallEvent
 
 class PrescriptionSerializer(serializers.ModelSerializer):
@@ -25,6 +26,8 @@ class RecallEventSerializer(serializers.ModelSerializer):
         model = RecallEvent
         fields = "__all__"
 =======
+=======
+>>>>>>> 1127b3f (.gitignore)
 
 class PrescriptionSerializer(serializers.Serializer):
     pass
