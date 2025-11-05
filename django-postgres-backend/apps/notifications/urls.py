@@ -1,8 +1,8 @@
-# apps/notifications/urls.py
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import NotificationViewSet
 
-from django.urls import path
-from .views import NotificationsSmokeView
+router = DefaultRouter()
+router.register(r"", NotificationViewSet, basename="notifications")
 
-urlpatterns = [
-    path("", NotificationsSmokeView.as_view(), name="notifications-smoke"),
-]
+urlpatterns = [path("", include(router.urls))]

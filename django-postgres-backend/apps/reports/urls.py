@@ -1,6 +1,8 @@
-from django.urls import path
-from .views import ReportsExportsSmokeView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import ReportExportViewSet
 
-urlpatterns = [
-    path("exports/", ReportsExportsSmokeView.as_view(), name="reports-exports-smoke"),
-]
+router = DefaultRouter()
+router.register(r"exports", ReportExportViewSet, basename="report-export")
+
+urlpatterns = [path("", include(router.urls))]

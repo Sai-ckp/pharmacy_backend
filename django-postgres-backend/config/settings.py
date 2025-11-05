@@ -1,7 +1,7 @@
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'pharmacy_inventory_db',
+        'NAME': 'pharmacy_inventory_db1',
         'USER': 'postgres',
         'PASSWORD': 'root',
         'HOST': 'localhost',

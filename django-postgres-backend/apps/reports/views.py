@@ -1,9 +1,8 @@
-# apps/reports/views.py
+from rest_framework import viewsets, permissions
+from .models import ReportExport
+from .serializers import ReportExportSerializer
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-
-class ReportsExportsSmokeView(APIView):
-    """GET /api/v1/reports/exports/ -> {"ok": true}"""
-    def get(self, request):
-        return Response({"ok": True})
+class ReportExportViewSet(viewsets.ModelViewSet):
+    queryset = ReportExport.objects.all().order_by("-created_at")
+    serializer_class = ReportExportSerializer
+    permission_classes = [permissions.IsAuthenticated]
