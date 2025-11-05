@@ -1,31 +1,39 @@
 """
-Catalog batch sellability rules (docstring contract only for Day 1):
+Batch sellability rules
 
-Rules:
-- Batch must be in ACTIVE status.
-- Must not be expired or blocked.
-- Near-expiry policy is controlled by settings (e.g., expiry_threshold_days = 180).
+Policy:
+- Batch must be in ACTIVE status, and
+- Must not be expired as of "as_of" (defaults to today).
 
-Expected interface to be implemented Day 2:
-
-def is_batch_sellable(batch_id, *, now=None) -> bool:
-    """Return True if the batch can be sold under the active policy.
-    Checks: ACTIVE status, not expired/blocked, and near-expiry threshold.
-    """
-
-def get_near_expiry_batches(location_id=None) -> list:
-    """Return batches that are near expiry according to the threshold."""
-
+This module intentionally keeps the logic small and query-free for easy reuse.
 """
 
-from datetime import date
+from __future__ import annotations
+
+from datetime import date as _date
+from typing import Optional, Union
+
 from .models import BatchLot
 
 
-def is_batch_sellable(batch_lot: BatchLot) -> bool:
-    if batch_lot.status != BatchLot.Status.ACTIVE:
+def is_batch_sellable(batch: Union[BatchLot, int], as_of: Optional[_date] = None) -> bool:
+    """Return True if the batch can be sold under the active policy.
+
+    Args:
+        batch: BatchLot instance or its primary key.
+        as_of: Date to compare expiry against; defaults to today.
+    """
+    obj: BatchLot
+    if isinstance(batch, BatchLot):
+        obj = batch
+    else:
+        obj = BatchLot.objects.get(pk=batch)
+
+    if obj.status != BatchLot.Status.ACTIVE:
         return False
-    if batch_lot.expiry_date and batch_lot.expiry_date <= date.today():
+
+    as_of = as_of or _date.today()
+    if obj.expiry_date and obj.expiry_date <= as_of:
         return False
     return True
 
