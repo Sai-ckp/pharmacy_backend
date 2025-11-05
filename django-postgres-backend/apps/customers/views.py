@@ -1,6 +1,7 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
+from rest_framework import viewsets
+from .models import Customer
+from .serializers import CustomerSerializer
 
-class CustomersSmokeView(APIView):
-    def get(self, request):
-        return Response({"ok": True, "app": "customers"})
+class CustomerViewSet(viewsets.ModelViewSet):
+    queryset = Customer.objects.all()
+    serializer_class = CustomerSerializer

@@ -1,6 +1,8 @@
 from rest_framework import serializers
+from .models import Customer
 
-class CustomerSerializer(serializers.Serializer):
-    """Placeholder serializer for Customer"""
-    # TODO: add fields
-    pass
+class CustomerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Customer
+        fields = '__all__'
+        read_only_fields = ('id',)

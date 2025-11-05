@@ -1,6 +1,7 @@
-from django.urls import path
-from .views import CustomersSmokeView
+from rest_framework.routers import DefaultRouter
+from .views import CustomerViewSet
 
-urlpatterns = [
-    path("", CustomersSmokeView.as_view(), name="customers-smoke"),
-]
+router = DefaultRouter()
+router.register(r'', CustomerViewSet, basename='customer')
+
+urlpatterns = router.urls
