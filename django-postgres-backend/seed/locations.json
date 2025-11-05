@@ -1,1 +1,5 @@
-[]
+[
+  {"model": "locations.location", "pk": 1, "fields": {"code": "SHOP-A", "name": "Shop A", "type": "SHOP", "address": "12 Market Road", "gstin": "22AAAAA0000A1Z5", "is_active": true}},
+  {"model": "locations.location", "pk": 2, "fields": {"code": "SHOP-B", "name": "Shop B", "type": "SHOP", "address": "45 High Street", "gstin": "22BBBBB0000B1Z6", "is_active": true}},
+  {"model": "locations.location", "pk": 3, "fields": {"code": "WH-1", "name": "Warehouse 1", "type": "WAREHOUSE", "address": "Industrial Area", "gstin": "22CCCCC0000C1Z7", "is_active": true}}
+]

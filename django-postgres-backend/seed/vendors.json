@@ -1,1 +1,23 @@
-[]
+[
+  {"model": "procurement.vendor", "pk": 1, "fields": {
+    "name": "Acme Pharma", "gstin": "29AAAAA0000A1Z5", "contact_phone": "9999990001",
+    "email": "contact@acmepharma.com", "contact_person": "John Doe",
+    "address": "12 Pharma Park, City", "payment_terms": "Net 30",
+    "bank_name": "HDFC", "account_no": "1234567890", "ifsc": "HDFC0001234",
+    "notes": "Preferred for analgesics", "rating": "4.5", "is_active": true
+  }},
+  {"model": "procurement.vendor", "pk": 2, "fields": {
+    "name": "Medico Supplies", "gstin": "29BBBBB0000B1Z6", "contact_phone": "9999990002",
+    "email": "support@medico.com", "contact_person": "Mary Smith",
+    "address": "45 Industrial Estate", "payment_terms": "Net 15",
+    "bank_name": "SBI", "account_no": "9876543210", "ifsc": "SBIN0004321",
+    "notes": "Fast delivery", "rating": "4.0", "is_active": true
+  }},
+  {"model": "procurement.vendor", "pk": 3, "fields": {
+    "name": "Zen Heal Labs", "gstin": "29CCCCC0000C1Z7", "contact_phone": "9999990003",
+    "email": "sales@zenheal.com", "contact_person": "Kiran",
+    "address": "88 Bio Street", "payment_terms": "Advance",
+    "bank_name": "ICICI", "account_no": "1122334455", "ifsc": "ICIC0005678",
+    "notes": "Specializes in antibiotics", "rating": "3.8", "is_active": true
+  }}
+]
