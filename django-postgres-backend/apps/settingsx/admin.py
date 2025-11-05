@@ -1,4 +1,6 @@
 from django.contrib import admin
+from .models import Settings, BusinessProfile
 
-# Day 1: no models yet
+admin.site.register(Settings)
+admin.site.register(BusinessProfile)
 

@@ -1,4 +1,9 @@
 from django.contrib import admin
+from .models import Location
 
-# Day 1: no models yet
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    list_display = ("id", "code", "name", "type", "is_active")
+    search_fields = ("code", "name")
 
