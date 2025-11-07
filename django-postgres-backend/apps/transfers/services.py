@@ -1,32 +1,55 @@
-"""
-transfers.services
+from django.db import transaction
+from decimal import Decimal
+from django.core.exceptions import ValidationError
+from django.utils import timezone
+from .models import TransferVoucher
+from apps.inventory.models import InventoryLedger
 
-Contract for: post_transfer(voucher_id)
+def stock_on_hand(location_id, batch_lot_id):
+    from django.db.models import Sum
+    s = InventoryLedger.objects.filter(location_id=location_id, batch_lot_id=batch_lot_id).aggregate(total=Sum("qty_change_base"))
+    return Decimal(s["total"] or 0)
 
-Flow (no implementation here — contract / docstring):
+def write_movement(location_id, batch_lot_id, qty_delta, reason, ref_doc_type, ref_doc_id):
+    InventoryLedger.objects.create(
+        location_id=location_id,
+        batch_lot_id=batch_lot_id,
+        qty_change_base=qty_delta,
+        reason=reason,
+        ref_doc_type=ref_doc_type,
+        ref_doc_id=ref_doc_id
+    )
 
-post_transfer(voucher_id):
-    - Purpose:
-        Finalize a transfer voucher: move stock from source location to destination, write ledger entries and audit.
+@transaction.atomic
+def post_transfer(voucher_id, actor):
+    v = TransferVoucher.objects.select_for_update().prefetch_related("lines__batch_lot").get(pk=voucher_id)
+    if v.from_location_id == v.to_location_id:
+        raise ValidationError("from and to cannot be same")
+    if v.status == TransferVoucher.Status.CANCELLED:
+        raise ValidationError("voucher cancelled")
 
-    - Expected steps:
-        1. Start DB transaction (atomic).
-        2. Load TransferVoucher and TransferLine(s).
-        3. For each TransferLine:
-            a. Validate qty_base present and > 0.
-            b. Validate batch exists and is mappable.
-            c. Prepare two ledger movements per line:
-                - Source movement:
-                    reason="TRANSFER_OUT"
-                    qty_change_base = - qty_base
-                - Destination movement:
-                    reason="TRANSFER_IN"
-                    qty_change_base = + qty_base
-                - Each ledger call should include ref_doc_type="transfer_vouchers" and ref_doc_id=voucher_id
-        4. Execute ledger writes (either inside transaction or ensure idempotency).
-        5. Update TransferVoucher.status -> "IN_TRANSIT" / "RECEIVED" as required.
-        6. Write audit log entry for the voucher posting.
-        7. Commit transaction.
-"""
-def post_transfer(voucher_id):
-    raise NotImplementedError("Contract only — implement tomorrow.")
+    # stock checks
+    for l in v.lines.all():
+        if stock_on_hand(v.from_location_id, l.batch_lot_id) < l.qty_base:
+            raise ValidationError(f"Insufficient stock for batch {l.batch_lot.batch_no}")
+
+    # write out and in
+    for l in v.lines.all():
+        write_movement(v.from_location_id, l.batch_lot_id, -l.qty_base, "TRANSFER_OUT", "TransferVoucher", v.id)
+        write_movement(v.to_location_id, l.batch_lot_id, +l.qty_base, "TRANSFER_IN", "TransferVoucher", v.id)
+
+    v.status = TransferVoucher.Status.IN_TRANSIT
+    v.posted_at = timezone.now()
+    v.posted_by = actor
+    v.save()
+    # audit log optional
+    return {"voucher_id": v.id, "status": v.status}
+
+@transaction.atomic
+def receive_transfer(voucher_id, actor):
+    v = TransferVoucher.objects.select_for_update().get(pk=voucher_id)
+    if v.status != TransferVoucher.Status.IN_TRANSIT:
+        raise ValidationError("Voucher not in IN_TRANSIT")
+    v.status = TransferVoucher.Status.RECEIVED
+    v.save(update_fields=["status"])
+    return {"voucher_id": v.id, "status": v.status}

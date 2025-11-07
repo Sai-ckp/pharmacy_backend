@@ -1,7 +1,7 @@
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'pharmacy_inventory_db',
+        'NAME': 'pharmacy_inventory_db1',
         'USER': 'postgres',
         'PASSWORD': 'root',
         'HOST': 'localhost',
@@ -33,6 +33,14 @@ INSTALLED_APPS = [
     'apps.compliance',
     'apps.reports',
     'apps.notifications',
+    # Dev A apps
+    'apps.accounts',
+    'apps.locations',
+    'apps.catalog',
+    'apps.inventory',
+    'apps.procurement',
+    'apps.settingsx',
+    'apps.governance',
     
 ]
 
@@ -106,4 +114,3 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
 }
-

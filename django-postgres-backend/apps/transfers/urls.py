@@ -1,6 +1,8 @@
-from django.urls import path
-from .views import TransfersVouchersSmokeView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import TransferVoucherViewSet
 
-urlpatterns = [
-    path("vouchers/", TransfersVouchersSmokeView.as_view(), name="transfers-vouchers-smoke"),
-]
+router = DefaultRouter()
+router.register(r"vouchers", TransferVoucherViewSet, basename="transfer-voucher")
+
+urlpatterns = [path("", include(router.urls))]
