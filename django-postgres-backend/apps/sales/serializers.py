@@ -15,6 +15,8 @@ class SalesLineSerializer(serializers.ModelSerializer):
         model = SalesLine
         fields = "__all__"
         read_only_fields = ("hsn_code", "batch_no", "expiry_date", "product_name", "pack_text", "mrp", "ptr", "pts", "line_total","sale_invoice")
+        read_only_fields = ("hsn_code", "batch_no", "expiry_date", "product_name", "pack_text", "mrp", "ptr", "pts", "line_total")
+
 
     def validate_qty_base(self, v):
         if v <= 0:

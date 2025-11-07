@@ -6,3 +6,5 @@ class NotificationViewSet(viewsets.ModelViewSet):
     queryset = Notification.objects.all().order_by("-created_at")
     serializer_class = NotificationSerializer
     permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
+

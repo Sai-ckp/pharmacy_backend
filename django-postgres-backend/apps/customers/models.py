@@ -3,7 +3,10 @@ from django.utils import timezone
 
 
 class Customer(models.Model):
+<<<<<<< HEAD
 
+=======
+>>>>>>> 38b44f7337d8ae7c8e6818d8f49439bd6ffc151a
     class Type(models.TextChoices):
         RETAIL = "RETAIL", "Retail"
         WHOLESALE = "WHOLESALE", "Wholesale"
@@ -30,11 +33,14 @@ class Customer(models.Model):
     class Meta:
         indexes = [models.Index(fields=["name"]), models.Index(fields=["phone"])]
 
+<<<<<<< HEAD
     name = models.CharField(max_length=255, blank=True, null=True)
     phone = models.CharField(max_length=32, unique=True, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     consent_required = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
+=======
+>>>>>>> 38b44f7337d8ae7c8e6818d8f49439bd6ffc151a
     def __str__(self):
         return f"{self.name} ({self.phone})"

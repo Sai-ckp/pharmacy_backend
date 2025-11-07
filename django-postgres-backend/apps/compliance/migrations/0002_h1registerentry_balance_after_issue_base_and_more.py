@@ -11,7 +11,11 @@ import datetime
 class Migration(migrations.Migration):
 
     dependencies = [
+<<<<<<< HEAD
         ('customers', '0003_alter_customer_name_alter_customer_phone'),
+=======
+        ('customers', '0001_initial'),
+>>>>>>> 38b44f7337d8ae7c8e6818d8f49439bd6ffc151a
         ('catalog', '0001_initial'),
         ('sales', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
