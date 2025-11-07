@@ -13,7 +13,7 @@ router.register(r'payments', PurchasePaymentViewSet)
 router.register(r'documents', PurchaseDocumentViewSet)
 router.register(r'vendor-returns', VendorReturnViewSet)
 router.register(r'purchase-orders', PurchaseOrderViewSet)
-router.register(r'goods-receipts', GoodsReceiptViewSet)
+router.register(r'grns', GoodsReceiptViewSet)
 
 urlpatterns = [
     path('', HealthView.as_view(), name='procurement-root'),

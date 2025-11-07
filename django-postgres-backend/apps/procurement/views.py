@@ -14,8 +14,8 @@ from .serializers import (
     PurchaseDocumentSerializer, VendorReturnSerializer,
     PurchaseOrderSerializer, GoodsReceiptSerializer,
 )
-from .services import post_purchase, post_vendor_return
-from core.utils.doc_numbers import next_doc_number
+from .services import post_purchase, post_vendor_return, post_goods_receipt
+from apps.settingsx.services import next_doc_number
 from apps.catalog.models import BatchLot
 from apps.inventory.services import write_movement
 
@@ -70,6 +70,18 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
         po_number = next_doc_number('PO')
         serializer.save(po_number=po_number, created_by=self.request.user if self.request.user.is_authenticated else None)
 
+    @action(detail=True, methods=["get", "post"], url_path="lines")
+    def po_lines(self, request, pk=None):
+        from .serializers import PurchaseOrderLineSerializer
+        if request.method.lower() == 'get':
+            lines = PurchaseOrderLine.objects.filter(po_id=pk)
+            return Response(PurchaseOrderLineSerializer(lines, many=True).data)
+        # POST create a line
+        ser = PurchaseOrderLineSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        ser.save(po_id=pk)
+        return Response(ser.data, status=status.HTTP_201_CREATED)
+
 
 class GoodsReceiptViewSet(viewsets.ModelViewSet):
     queryset = GoodsReceipt.objects.all().prefetch_related("lines")
@@ -78,36 +90,6 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="post")
     @transaction.atomic
     def post_grn(self, request, pk=None):
-        grn = get_object_or_404(GoodsReceipt, pk=pk)
-        for ln in grn.lines.select_related("product"):
-            batch, _ = BatchLot.objects.get_or_create(
-                product=ln.product, batch_no=ln.batch_no,
-                defaults={"mfg_date": ln.mfg_date, "expiry_date": ln.expiry_date, "status": BatchLot.Status.ACTIVE}
-            )
-            if ln.mfg_date and not batch.mfg_date:
-                batch.mfg_date = ln.mfg_date
-            if ln.expiry_date and not batch.expiry_date:
-                batch.expiry_date = ln.expiry_date
-            batch.save()
-            qty_base = (ln.qty_base_received or 0) - (ln.qty_base_damaged or 0)
-            write_movement(
-                location_id=grn.location_id,
-                batch_lot_id=batch.id,
-                qty_change_base=qty_base,
-                reason="PURCHASE",
-                ref_doc_type="GRN",
-                ref_doc_id=grn.id,
-            )
-        # Update PO status naive check
-        po = grn.po
-        total_ordered = sum(l.qty_packs_ordered for l in po.lines.all()) or 0
-        total_received = sum(gl.qty_packs_received for gl in GoodsReceiptLine.objects.filter(po_line__po=po)) or 0
-        if total_ordered and total_received >= total_ordered:
-            po.status = PurchaseOrder.Status.COMPLETED
-        else:
-            po.status = PurchaseOrder.Status.PARTIALLY_RECEIVED
-        po.save(update_fields=["status"])
-        grn.status = GoodsReceipt.Status.POSTED
-        grn.save(update_fields=["status"])
+        post_goods_receipt(int(pk), actor=request.user if request.user.is_authenticated else None)
         return Response({"posted": True})
 
