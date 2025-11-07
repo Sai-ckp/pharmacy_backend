@@ -1,39 +1,29 @@
-"""
-Batch sellability rules
-
-Policy:
-- Batch must be in ACTIVE status, and
-- Must not be expired as of "as_of" (defaults to today).
-
-This module intentionally keeps the logic small and query-free for easy reuse.
-"""
-
 from __future__ import annotations
 
-from datetime import date as _date
-from typing import Optional, Union
+from decimal import Decimal
+from typing import Union
 
-from .models import BatchLot
+from .models import BatchLot, Product
 
 
-def is_batch_sellable(batch: Union[BatchLot, int], as_of: Optional[_date] = None) -> bool:
-    """Return True if the batch can be sold under the active policy.
+def packs_to_base(product_id: int, qty_packs: Decimal) -> Decimal:
+    p = Product.objects.get(id=product_id)
+    return (Decimal(qty_packs) or Decimal("0")) * (p.units_per_pack or Decimal("0"))
 
-    Args:
-        batch: BatchLot instance or its primary key.
-        as_of: Date to compare expiry against; defaults to today.
-    """
-    obj: BatchLot
-    if isinstance(batch, BatchLot):
-        obj = batch
-    else:
-        obj = BatchLot.objects.get(pk=batch)
 
-    if obj.status != BatchLot.Status.ACTIVE:
-        return False
-
-    as_of = as_of or _date.today()
-    if obj.expiry_date and obj.expiry_date <= as_of:
-        return False
-    return True
+def product_snapshot(product_id: int, batch_lot_id: int) -> dict:
+    p = Product.objects.get(id=product_id)
+    lot = BatchLot.objects.get(id=batch_lot_id)
+    return {
+        "product_name": p.name,
+        "generic_name": p.generic_name,
+        "hsn": p.hsn,
+        "schedule": p.schedule,
+        "pack_size": p.pack_size,
+        "manufacturer": p.manufacturer,
+        "mrp": str(p.mrp),
+        "batch_no": lot.batch_no,
+        "expiry_date": lot.expiry_date,
+        "rack_no": lot.rack_no,
+    }
 

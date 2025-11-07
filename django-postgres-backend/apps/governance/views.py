@@ -1,7 +1,8 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import generics
+from rest_framework import generics, status
 from .models import AuditLog
+from . import services
 
 
 class HealthView(APIView):
@@ -17,16 +18,28 @@ class AuditLogListView(generics.ListAPIView):
 
     def list(self, request, *args, **kwargs):
         qs = AuditLog.objects.all()
-        table_name = request.query_params.get("table_name")
-        action = request.query_params.get("action")
-        if table_name:
-            qs = qs.filter(table_name=table_name)
-        if action:
-            qs = qs.filter(action=action)
+        table = request.query_params.get("table")
+        record_id = request.query_params.get("record_id")
+        if table:
+            qs = qs.filter(table_name=table)
+        if record_id:
+            qs = qs.filter(record_id=str(record_id))
         data = list(
             qs.order_by("-created_at").values(
                 "id", "actor_user_id", "action", "table_name", "record_id", "created_at"
             )
         )
         return Response(data)
+
+
+class RunExpiryScanView(APIView):
+    def post(self, request):
+        result = services.run_expiry_scan()
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class RunLowStockScanView(APIView):
+    def post(self, request):
+        result = services.run_low_stock_scan()
+        return Response({"count": len(result), "items": result}, status=status.HTTP_200_OK)
 

@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
-from apps.settingsx.models import BusinessProfile, DocCounter, Settings
+from apps.settingsx.models import BusinessProfile, DocCounter, SettingKV
+from apps.catalog.models import ProductCategory
+from apps.inventory.models import RackRule
 
 
 class Command(BaseCommand):
@@ -15,23 +17,30 @@ class Command(BaseCommand):
         ))
 
         counters = [
-            ("INVOICE", "INV"),
-            ("PO", "PO"),
-            ("GRN", "GRN"),
+            ("PO", "PO-"),
+            ("GRN", "GRN-"),
+            ("TRANSFER", "TR-"),
+            ("INVOICE", "INV-"),
         ]
         for doc, prefix in counters:
-            DocCounter.objects.get_or_create(document_type=doc, defaults=dict(prefix=prefix, next_number=1001, padding_int=4))
+            DocCounter.objects.get_or_create(document_type=doc, defaults=dict(prefix=prefix, next_number=1, padding_int=5))
 
         defaults = {
-            "expiry_critical_days": "30",
-            "expiry_warning_days": "60",
-            "low_stock_threshold_default": "50",
-            "pending_bill_alert_days": "7",
-            "gst_rate_default": "12",
-            "tax_calc_method": "INCLUSIVE",
+            "ALERT_LOW_STOCK_DEFAULT": "50",
+            "ALERT_EXPIRY_WARNING_DAYS": "60",
+            "ALERT_EXPIRY_CRITICAL_DAYS": "30",
+            "ALLOW_NEGATIVE_STOCK": "false",
         }
         for k, v in defaults.items():
-            Settings.objects.get_or_create(key=k, defaults=dict(value=v))
+            SettingKV.objects.get_or_create(key=k, defaults=dict(value=v))
+
+        # Seed product categories
+        for name in ["Tablets", "Syrups", "Injections"]:
+            ProductCategory.objects.get_or_create(name=name)
+
+        # Seed a couple of rack rules
+        RackRule.objects.get_or_create(rack_code="A1", location_id=1, manufacturer_name="ACME", defaults={"is_active": True})
+        RackRule.objects.get_or_create(rack_code="B1", location_id=1, manufacturer_name="Zen Labs", defaults={"is_active": True})
 
         self.stdout.write(self.style.SUCCESS("Seed data created/updated."))
 

@@ -1,10 +1,10 @@
 from rest_framework import serializers
-from .models import Settings, BusinessProfile, DocCounter
+from .models import SettingKV, BusinessProfile, DocCounter
 
 
 class SettingsSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Settings
+        model = SettingKV
         fields = "__all__"
 
 

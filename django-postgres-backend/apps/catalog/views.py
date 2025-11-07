@@ -1,10 +1,13 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
+from django.db import models
 from django.utils import timezone
 from datetime import timedelta
 from .models import ProductCategory, Product, BatchLot
 from .serializers import ProductCategorySerializer, ProductSerializer, BatchLotSerializer
+from apps.procurement.models import Vendor
+from apps.procurement.serializers import VendorSerializer
 
 
 class HealthView(APIView):
@@ -21,18 +24,20 @@ class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     filterset_fields = ["category", "is_active"]
-    search_fields = ["name", "generic_name", "manufacturer"]
+    search_fields = ["code", "name", "generic_name", "manufacturer"]
 
     def get_queryset(self):
         qs = super().get_queryset()
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(
+                models.Q(code__icontains=q) | models.Q(name__icontains=q) | models.Q(generic_name__icontains=q) | models.Q(manufacturer__icontains=q)
+            )
         low_stock = self.request.query_params.get("low_stock")
         if low_stock and low_stock.lower() == 'true':
             from apps.inventory.services import stock_summary
-            from apps.settingsx.models import Settings
-            try:
-                default_low = int(Settings.objects.get(key="low_stock_threshold_default").value)
-            except Settings.DoesNotExist:
-                default_low = None
+            from apps.settingsx.services import get_setting
+            default_low = int(get_setting("ALERT_LOW_STOCK_DEFAULT", "50") or 50)
             low_ids = []
             # naive per-product aggregation
             rows = stock_summary()
@@ -65,4 +70,9 @@ class BatchLotViewSet(viewsets.ModelViewSet):
             except ValueError:
                 pass
         return qs
+
+
+class VendorViewSet(viewsets.ModelViewSet):
+    queryset = Vendor.objects.all()
+    serializer_class = VendorSerializer
 

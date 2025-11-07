@@ -1,7 +1,7 @@
 from django.db import models
 
 
-class Settings(models.Model):
+class SettingKV(models.Model):
     key = models.CharField(primary_key=True, max_length=120)
     value = models.CharField(max_length=500)
     description = models.CharField(max_length=255, blank=True)

@@ -1,8 +1,9 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import generics, viewsets
-from .models import Settings, BusinessProfile, DocCounter
+from rest_framework import generics, viewsets, status
+from .models import SettingKV, BusinessProfile, DocCounter
 from .serializers import SettingsSerializer, BusinessProfileSerializer, DocCounterSerializer
+from . import services
 
 
 class HealthView(APIView):
@@ -11,13 +12,13 @@ class HealthView(APIView):
 
 
 class SettingsListCreateView(generics.ListCreateAPIView):
-    queryset = Settings.objects.all()
+    queryset = SettingKV.objects.all()
     serializer_class = SettingsSerializer
 
 
 class SettingsDetailView(generics.RetrieveUpdateAPIView):
     lookup_field = "pk"
-    queryset = Settings.objects.all()
+    queryset = SettingKV.objects.all()
     serializer_class = SettingsSerializer
 
 
@@ -39,11 +40,38 @@ class SettingsGroupView(APIView):
         }
         data = {}
         for group, items in keys.items():
-            data[group] = {k: Settings.objects.filter(key=k).values_list("value", flat=True).first() for k in items}
+            data[group] = {k: SettingKV.objects.filter(key=k).values_list("value", flat=True).first() for k in items}
         return Response(data)
 
 
 class DocCounterViewSet(viewsets.ModelViewSet):
     queryset = DocCounter.objects.all()
     serializer_class = DocCounterSerializer
+
+
+class KVDetailView(APIView):
+    def get(self, request, key: str):
+        val = services.get_setting(key)
+        if val is None:
+            return Response({"key": key, "value": None}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"key": key, "value": val})
+
+    def put(self, request, key: str):
+        value = request.data.get("value")
+        if value is None:
+            return Response({"detail": "value is required"}, status=status.HTTP_400_BAD_REQUEST)
+        services.set_setting(key, str(value))
+        return Response({"key": key, "value": str(value)})
+
+
+class DocCounterNextView(APIView):
+    def post(self, request):
+        document_type = request.data.get("document_type")
+        prefix = request.data.get("prefix", "")
+        padding = request.data.get("padding")
+        if not document_type:
+            return Response({"detail": "document_type is required"}, status=status.HTTP_400_BAD_REQUEST)
+        pad_int = int(padding) if padding is not None else None
+        number = services.next_doc_number(document_type, prefix=prefix or "", padding=pad_int)
+        return Response({"number": number})
 
