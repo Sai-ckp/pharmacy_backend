@@ -12,11 +12,6 @@ class Migration(migrations.Migration):
     operations = [
         migrations.AddField(
             model_name='customer',
-            name='address',
-            field=models.TextField(blank=True),
-        ),
-        migrations.AddField(
-            model_name='customer',
             name='consent_required',
             field=models.BooleanField(default=False),
         ),
