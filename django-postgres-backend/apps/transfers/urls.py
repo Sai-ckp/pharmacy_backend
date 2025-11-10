@@ -5,4 +5,6 @@ from .views import TransferVoucherViewSet
 router = DefaultRouter()
 router.register(r"vouchers", TransferVoucherViewSet, basename="transfer-voucher")
 
-urlpatterns = [path("", include(router.urls))]
+urlpatterns = [
+    path("", include(router.urls)),
+]

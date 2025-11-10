@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import TransferVoucher, TransferLine
 
+
 class TransferLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = TransferLine
@@ -8,7 +9,7 @@ class TransferLineSerializer(serializers.ModelSerializer):
 
     def validate_qty_base(self, v):
         if v <= 0:
-            raise serializers.ValidationError("qty_base must be > 0")
+            raise serializers.ValidationError("qty_base must be greater than zero")
         return v
 
 
@@ -22,9 +23,9 @@ class TransferVoucherSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         if data["from_location"] == data["to_location"]:
-            raise serializers.ValidationError("from_location and to_location cannot be same")
+            raise serializers.ValidationError("From and To locations cannot be the same.")
         if not data.get("lines"):
-            raise serializers.ValidationError("transfer must include lines")
+            raise serializers.ValidationError("Transfer must include at least one line item.")
         return data
 
     def create(self, validated_data):

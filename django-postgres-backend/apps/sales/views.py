@@ -6,6 +6,7 @@ from .models import SalesInvoice, SalesPayment
 from .serializers import SalesInvoiceSerializer, SalesPaymentSerializer
 from . import services
 
+
 class SalesInvoiceViewSet(viewsets.ModelViewSet):
     queryset = SalesInvoice.objects.all().select_related("customer", "location")
     serializer_class = SalesInvoiceSerializer
@@ -17,10 +18,19 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
     def post_invoice(self, request, pk=None):
         invoice = self.get_object()
         try:
-            result = services.post_invoice(invoice.id, actor=request.user)
+            result = services.post_invoice(actor=request.user, invoice_id=invoice.id)
+            return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(result, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel_invoice(self, request, pk=None):
+        invoice = self.get_object()
+        try:
+            result = services.cancel_invoice(actor=request.user, invoice_id=invoice.id)
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class SalesPaymentViewSet(viewsets.ModelViewSet):

@@ -6,4 +6,6 @@ router = DefaultRouter()
 router.register(r"invoices", SalesInvoiceViewSet, basename="sales-invoice")
 router.register(r"payments", SalesPaymentViewSet, basename="sales-payment")
 
-urlpatterns = [path("", include(router.urls))]
+urlpatterns = [
+    path("", include(router.urls)),
+]
