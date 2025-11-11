@@ -54,8 +54,8 @@ class SalesInvoice(models.Model):
 
 class SalesLine(models.Model):
     sale_invoice = models.ForeignKey(SalesInvoice, on_delete=models.CASCADE, related_name="lines")
-    product = models.ForeignKey("products.Product", on_delete=models.PROTECT)
-    batch_lot = models.ForeignKey("inventory.BatchLot", on_delete=models.PROTECT)
+    product = models.ForeignKey("catalog.Product", on_delete=models.PROTECT)
+    batch_lot = models.ForeignKey("catalog.BatchLot", on_delete=models.PROTECT)
     qty_base = models.DecimalField(max_digits=14, decimal_places=4)
     sold_uom = models.CharField(max_length=8, choices=[("BASE", "Base"), ("PACK", "Pack")])
     rate_per_base = models.DecimalField(max_digits=14, decimal_places=4)

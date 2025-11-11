@@ -3,17 +3,21 @@ from django.utils import timezone
 
 
 class Customer(models.Model):
-
     class Type(models.TextChoices):
         RETAIL = "RETAIL", "Retail"
         WHOLESALE = "WHOLESALE", "Wholesale"
         HOSPITAL = "HOSPITAL", "Hospital"
 
-    name = models.CharField(max_length=255,blank=True, null=True) #made blank and null to avoid migrationsissues
-    phone = models.CharField(max_length=20, unique=True,blank=True, null=True) #made blank and null to avoid migrationsissues
+    name = models.CharField(max_length=255, blank=False, null=False)
+    phone = models.CharField(max_length=20, unique=True, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     gstin = models.CharField(max_length=32, blank=True, null=True)
     type = models.CharField(max_length=16, choices=Type.choices, default=Type.RETAIL)
+
+    # New fields from updated ERD
+    credit_limit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    outstanding_balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    customer_category = models.CharField(max_length=64, blank=True, null=True)
     price_tier = models.CharField(max_length=64, blank=True, null=True)
 
     billing_address = models.TextField(blank=True, null=True)
@@ -28,14 +32,12 @@ class Customer(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        indexes = [models.Index(fields=["name"]), models.Index(fields=["phone"])]
-
-
-    name = models.CharField(max_length=255, blank=True, null=True)
-    phone = models.CharField(max_length=32, unique=True, blank=True, null=True)
-    email = models.EmailField(blank=True, null=True)
-    consent_required = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)
+        indexes = [
+            models.Index(fields=["name"]),
+            models.Index(fields=["phone"]),
+            models.Index(fields=["type"]),
+        ]
+        ordering = ["name"]
 
     def __str__(self):
-        return f"{self.name} ({self.phone})"
+        return f"{self.name} ({self.phone or 'N/A'})"

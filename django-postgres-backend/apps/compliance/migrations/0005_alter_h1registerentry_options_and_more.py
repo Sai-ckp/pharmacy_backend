@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('accounts', '0001_initial'),
         ('catalog', '0002_batchlot_mfg_date_product_code_product_description_and_more'),
-        ('sales', '0002_rename_idx_salesinvoice_status_date_sales_sales_status_8766e4_idx'),
+        ('sales', '0001_initial'),
         ('compliance', '0004_alter_h1registerentry_balance_after_issue_base_and_more'),
     ]
 

@@ -1,8 +1,7 @@
 from rest_framework import serializers
 from decimal import Decimal, ROUND_HALF_UP
 from .models import SalesInvoice, SalesLine, SalesPayment
-from apps.catalog.models import Product
-from apps.inventory.models import BatchLot
+from apps.catalog.models import Product, BatchLot
 from apps.customers.models import Customer
 
 AMOUNT_QUANT = Decimal("0.0001")
@@ -21,14 +20,31 @@ class SalesLineSerializer(serializers.ModelSerializer):
 
         if prod and batch and batch.product_id != prod.id:
             raise serializers.ValidationError("Batch does not belong to product")
-        if data.get("qty_base") and data["qty_base"] <= 0:
+        if data.get("qty_base") and Decimal(data["qty_base"]) <= 0:
             raise serializers.ValidationError("Quantity must be greater than zero")
         return data
+
+
+class SalesPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SalesPayment
+        fields = "__all__"
+        read_only_fields = ("id", "received_at",)
+
+    def validate_amount(self, v):
+        if v <= 0:
+            raise serializers.ValidationError("amount must be > 0")
+        return v
 
 
 class SalesInvoiceSerializer(serializers.ModelSerializer):
     lines = SalesLineSerializer(many=True)
     customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
+
+    # computed/read-only fields
+    total_paid = serializers.SerializerMethodField(read_only=True)
+    outstanding = serializers.SerializerMethodField(read_only=True)
+    payment_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = SalesInvoice
@@ -41,7 +57,25 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "updated_at",
             "posted_at",
             "posted_by",
+            "total_paid",
+            "outstanding",
+            "payment_status",
         )
+
+    def get_total_paid(self, obj):
+        # sum payments if related_name is payments or sales_payments; adapt if different
+        payments = getattr(obj, "payments", None) or getattr(obj, "sales_payments", None) or obj.payments.all()
+        total = sum([p.amount for p in payments]) if payments else Decimal("0")
+        return Decimal(total).quantize(CURRENCY_QUANT)
+
+    def get_outstanding(self, obj):
+        total_paid = self.get_total_paid(obj)
+        net_total = obj.net_total or Decimal("0")
+        try:
+            out = (Decimal(net_total) - Decimal(total_paid)).quantize(CURRENCY_QUANT)
+        except Exception:
+            out = Decimal("0.00")
+        return out
 
     def validate(self, data):
         lines = data.get("lines") or []
@@ -87,3 +121,20 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         invoice.net_total = net
         invoice.save()
         return invoice
+
+    def update(self, instance, validated_data):
+        if instance.status == SalesInvoice.Status.POSTED:
+            raise serializers.ValidationError("Cannot edit posted invoice")
+        lines = validated_data.pop("lines", None)
+        for k, v in validated_data.items():
+            setattr(instance, k, v)
+        instance.save()
+        if lines is not None:
+            instance.lines.all().delete()
+            gross, discount_total, tax_total, net = self._compute_totals_and_create_lines(instance, lines)
+            instance.gross_total = gross
+            instance.discount_total = discount_total
+            instance.tax_total = tax_total
+            instance.net_total = net
+            instance.save()
+        return instance
