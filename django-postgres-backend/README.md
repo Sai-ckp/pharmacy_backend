@@ -75,3 +75,22 @@ docker-compose up --build
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for more details.
+## Scheduled Jobs
+
+Use Django management commands and your system scheduler (cron) to run maintenance tasks.
+
+Examples (crontab):
+
+```
+# Every night at 02:00 – expiry scan
+0 2 * * * /usr/bin/python /path/to/django-postgres-backend/manage.py expiry_scan
+
+# Every night at 02:15 – low stock scan
+15 2 * * * /usr/bin/python /path/to/django-postgres-backend/manage.py low_stock_scan
+
+# Every 15 minutes – dispatch notifications
+*/15 * * * * /usr/bin/python /path/to/django-postgres-backend/manage.py dispatch_notifications
+
+# Weekly on Sunday 03:00 – purge old logs per RetentionPolicy
+0 3 * * 0 /usr/bin/python /path/to/django-postgres-backend/manage.py purge_logs
+```

@@ -102,6 +102,21 @@ class Uom(models.Model):
         return self.name
 
 
+class VendorProductCode(models.Model):
+    vendor = models.ForeignKey('procurement.Vendor', on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    vendor_code = models.CharField(max_length=120)
+    vendor_name_alias = models.CharField(max_length=200, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["vendor", "vendor_code"], name="uq_vendor_code"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vendor_id}:{self.vendor_code} -> {self.product_id}"
+
+
 class BatchLot(models.Model):
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "ACTIVE"
@@ -124,6 +139,8 @@ class BatchLot(models.Model):
         ]
         indexes = [
             models.Index(fields=["product", "status", "expiry_date"], name="idx_lot_product_status_exp"),
+            models.Index(fields=["status", "expiry_date"], name="idx_lot_status_exp"),
+            models.Index(fields=["product", "expiry_date"], name="idx_lot_product_exp"),
         ]
 
     def __str__(self) -> str:

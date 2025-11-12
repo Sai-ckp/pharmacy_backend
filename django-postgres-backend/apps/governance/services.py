@@ -4,6 +4,7 @@ from django.db import transaction
 from typing import Optional
 
 from .models import AuditLog, SystemEvent
+from .middleware import get_request_id
 
 
 @transaction.atomic
@@ -24,7 +25,7 @@ def audit(
         before_json=before,
         after_json=after,
         ip=(meta or {}).get("ip", ""),
-        user_agent=(meta or {}).get("user_agent", ""),
+        user_agent=((meta or {}).get("user_agent", "") + (f" req_id={get_request_id('')}" if get_request_id('') else "")).strip(),
     )
 
 

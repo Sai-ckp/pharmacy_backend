@@ -23,6 +23,7 @@ class InventoryMovement(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["location", "batch_lot", "created_at"], name="idx_move_loc_batch_dt"),
+            models.Index(fields=["ref_doc_type", "ref_doc_id"], name="idx_move_refdoc"),
         ]
 
 

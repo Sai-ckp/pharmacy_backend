@@ -4,10 +4,10 @@ from rest_framework import viewsets
 from django.db import models
 from django.utils import timezone
 from datetime import timedelta
-from .models import ProductCategory, Product, BatchLot, MedicineForm, Uom
+from .models import ProductCategory, Product, BatchLot, MedicineForm, Uom, VendorProductCode
 from .serializers import (
     ProductCategorySerializer, ProductSerializer, BatchLotSerializer,
-    MedicineFormSerializer, UomSerializer,
+    MedicineFormSerializer, UomSerializer, VendorProductCodeSerializer,
 )
 from apps.procurement.models import Vendor
 from apps.procurement.serializers import VendorSerializer
@@ -128,4 +128,11 @@ class UomViewSet(viewsets.ModelViewSet):
         if ordering in ("name", "-name", "created_at", "-created_at"):
             qs = qs.order_by(ordering)
         return qs
+
+
+class VendorProductCodeViewSet(viewsets.ModelViewSet):
+    queryset = VendorProductCode.objects.all()
+    serializer_class = VendorProductCodeSerializer
+    filterset_fields = ["vendor", "product"]
+    search_fields = ["vendor_code", "vendor_name_alias"]
 

@@ -1,6 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import generics, status
+from .permissions import IsAdmin
 from .models import AuditLog
 from . import services
 
@@ -33,12 +34,14 @@ class AuditLogListView(generics.ListAPIView):
 
 
 class RunExpiryScanView(APIView):
+    permission_classes = [IsAdmin]
     def post(self, request):
         result = services.run_expiry_scan()
         return Response(result, status=status.HTTP_200_OK)
 
 
 class RunLowStockScanView(APIView):
+    permission_classes = [IsAdmin]
     def post(self, request):
         result = services.run_low_stock_scan()
         return Response({"count": len(result), "items": result}, status=status.HTTP_200_OK)

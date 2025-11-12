@@ -100,6 +100,11 @@ class PurchaseOrder(models.Model):
     net_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "order_date"], name="idx_po_status_orderdate"),
+        ]
+
 
 class PurchaseOrderLine(models.Model):
     po = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='lines')

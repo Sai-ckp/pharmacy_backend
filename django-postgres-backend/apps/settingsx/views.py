@@ -9,6 +9,8 @@ from .serializers import (
 from .models import PaymentMethod, PaymentTerm
 from rest_framework import viewsets
 from . import services
+from .services_backup import restore_backup
+from apps.governance.permissions import IsAdmin
 
 
 class HealthView(APIView):
@@ -79,6 +81,20 @@ class DocCounterNextView(APIView):
         pad_int = int(padding) if padding is not None else None
         number = services.next_doc_number(document_type, prefix=prefix or "", padding=pad_int)
         return Response({"number": number})
+
+
+class BackupRestoreView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        archive_id = request.data.get("archive_id")
+        if not archive_id:
+            return Response({"detail": "archive_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        result = restore_backup(archive_id=int(archive_id), actor=request.user)
+        code = result.get("code")
+        if code in {"RESTORE_DISABLED", "FORBIDDEN", "INVALID_PATH", "NOT_FOUND"}:
+            return Response(result, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
 
 
 class PaymentMethodViewSet(viewsets.ModelViewSet):
