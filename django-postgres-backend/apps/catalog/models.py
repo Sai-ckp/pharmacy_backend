@@ -5,6 +5,8 @@ from django.utils import timezone
 class ProductCategory(models.Model):
     name = models.CharField(max_length=120, unique=True)
     is_active = models.BooleanField(default=True)
+    description = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
         return self.name
@@ -60,6 +62,44 @@ class Product(models.Model):
         if self.reorder_level is not None and self.reorder_level < 0:
             raise ValueError("reorder_level must be >= 0")
         super().save(*args, **kwargs)
+
+
+class MedicineForm(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=512, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["name"], name="idx_form_name"),
+            models.Index(fields=["is_active"], name="idx_form_active"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Uom(models.Model):
+    class UomType(models.TextChoices):
+        BASE = "BASE", "BASE"
+        PACK = "PACK", "PACK"
+        BOTH = "BOTH", "BOTH"
+
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=512, null=True, blank=True)
+    uom_type = models.CharField(max_length=8, choices=UomType.choices, default=UomType.BOTH)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["name"], name="idx_uom_name"),
+            models.Index(fields=["is_active"], name="idx_uom_active"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class BatchLot(models.Model):

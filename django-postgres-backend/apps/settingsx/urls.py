@@ -3,11 +3,14 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     HealthView, SettingsListCreateView, SettingsDetailView, BusinessProfileView,
     SettingsGroupView, DocCounterViewSet, KVDetailView, DocCounterNextView,
+    PaymentMethodViewSet, PaymentTermViewSet,
 )
 
 
 router = DefaultRouter()
 router.register(r'counters', DocCounterViewSet)
+router.register(r'payment-methods', PaymentMethodViewSet)
+router.register(r'payment-terms', PaymentTermViewSet)
 
 urlpatterns = [
     path('', HealthView.as_view(), name='settings-root'),

@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
-from apps.settingsx.models import BusinessProfile, DocCounter, SettingKV
-from apps.catalog.models import ProductCategory
-from apps.inventory.models import RackRule
+from apps.settingsx.models import BusinessProfile, DocCounter, SettingKV, PaymentMethod, PaymentTerm
+from apps.catalog.models import ProductCategory, MedicineForm, Uom
+from apps.inventory.models import RackRule, RackLocation
 
 
 class Command(BaseCommand):
@@ -41,6 +41,31 @@ class Command(BaseCommand):
         # Seed a couple of rack rules
         RackRule.objects.get_or_create(rack_code="A1", location_id=1, manufacturer_name="ACME", defaults={"is_active": True})
         RackRule.objects.get_or_create(rack_code="B1", location_id=1, manufacturer_name="Zen Labs", defaults={"is_active": True})
+
+        # Seed Medicine Forms
+        for name in ["Tablet", "Capsule", "Syrup", "Injection", "Ointment", "Drops"]:
+            MedicineForm.objects.get_or_create(name=name)
+
+        # Seed UOMs
+        uoms = [
+            ("Strip", "PACK"), ("Bottle", "PACK"), ("Box", "PACK"), ("Vial", "PACK"), ("Tube", "PACK"),
+            ("Tablet", "BASE"), ("mL", "BASE"), ("g", "BASE"),
+        ]
+        for name, typ in uoms:
+            Uom.objects.get_or_create(name=name, defaults={"uom_type": typ})
+
+        # Seed Payment Methods
+        for name in ["Cash", "Card", "UPI", "Credit", "Insurance"]:
+            PaymentMethod.objects.get_or_create(name=name)
+
+        # Seed Payment Terms
+        terms = [("Immediate", 0), ("Net 15", 15), ("Net 30", 30), ("Net 45", 45), ("Net 60", 60)]
+        for name, days in terms:
+            PaymentTerm.objects.get_or_create(name=name, defaults={"days": days})
+
+        # Seed Rack Locations
+        for name in ["A1", "A2", "B1", "B2", "C1"]:
+            RackLocation.objects.get_or_create(name=name)
 
         self.stdout.write(self.style.SUCCESS("Seed data created/updated."))
 

@@ -4,8 +4,11 @@ from rest_framework import viewsets
 from django.db import models
 from django.utils import timezone
 from datetime import timedelta
-from .models import ProductCategory, Product, BatchLot
-from .serializers import ProductCategorySerializer, ProductSerializer, BatchLotSerializer
+from .models import ProductCategory, Product, BatchLot, MedicineForm, Uom
+from .serializers import (
+    ProductCategorySerializer, ProductSerializer, BatchLotSerializer,
+    MedicineFormSerializer, UomSerializer,
+)
 from apps.procurement.models import Vendor
 from apps.procurement.serializers import VendorSerializer
 
@@ -18,6 +21,20 @@ class HealthView(APIView):
 class ProductCategoryViewSet(viewsets.ModelViewSet):
     queryset = ProductCategory.objects.all()
     serializer_class = ProductCategorySerializer
+    ordering_fields = ["name", "created_at"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(models.Q(name__icontains=q) | models.Q(description__icontains=q))
+        is_active = self.request.query_params.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        ordering = self.request.query_params.get("ordering")
+        if ordering in ("name", "-name", "created_at", "-created_at"):
+            qs = qs.order_by(ordering)
+        return qs
 
 
 class ProductViewSet(viewsets.ModelViewSet):
@@ -75,4 +92,40 @@ class BatchLotViewSet(viewsets.ModelViewSet):
 class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
+
+
+class MedicineFormViewSet(viewsets.ModelViewSet):
+    queryset = MedicineForm.objects.all()
+    serializer_class = MedicineFormSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(models.Q(name__icontains=q) | models.Q(description__icontains=q))
+        is_active = self.request.query_params.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        ordering = self.request.query_params.get("ordering")
+        if ordering in ("name", "-name", "created_at", "-created_at"):
+            qs = qs.order_by(ordering)
+        return qs
+
+
+class UomViewSet(viewsets.ModelViewSet):
+    queryset = Uom.objects.all()
+    serializer_class = UomSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(models.Q(name__icontains=q) | models.Q(description__icontains=q))
+        is_active = self.request.query_params.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        ordering = self.request.query_params.get("ordering")
+        if ordering in ("name", "-name", "created_at", "-created_at"):
+            qs = qs.order_by(ordering)
+        return qs
 
