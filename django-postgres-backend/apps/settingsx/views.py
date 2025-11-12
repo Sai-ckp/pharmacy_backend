@@ -2,7 +2,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import generics, viewsets, status
 from .models import SettingKV, BusinessProfile, DocCounter
-from .serializers import SettingsSerializer, BusinessProfileSerializer, DocCounterSerializer
+from .serializers import (
+    SettingsSerializer, BusinessProfileSerializer, DocCounterSerializer,
+    PaymentMethodSerializer, PaymentTermSerializer,
+)
+from .models import PaymentMethod, PaymentTerm
+from rest_framework import viewsets
 from . import services
 
 
@@ -74,4 +79,40 @@ class DocCounterNextView(APIView):
         pad_int = int(padding) if padding is not None else None
         number = services.next_doc_number(document_type, prefix=prefix or "", padding=pad_int)
         return Response({"number": number})
+
+
+class PaymentMethodViewSet(viewsets.ModelViewSet):
+    queryset = PaymentMethod.objects.all()
+    serializer_class = PaymentMethodSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(models.Q(name__icontains=q) | models.Q(description__icontains=q))
+        is_active = self.request.query_params.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        ordering = self.request.query_params.get("ordering")
+        if ordering in ("name", "-name", "created_at", "-created_at"):
+            qs = qs.order_by(ordering)
+        return qs
+
+
+class PaymentTermViewSet(viewsets.ModelViewSet):
+    queryset = PaymentTerm.objects.all()
+    serializer_class = PaymentTermSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(models.Q(name__icontains=q) | models.Q(description__icontains=q))
+        is_active = self.request.query_params.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        ordering = self.request.query_params.get("ordering")
+        if ordering in ("name", "-name", "created_at", "-created_at"):
+            qs = qs.order_by(ordering)
+        return qs
 

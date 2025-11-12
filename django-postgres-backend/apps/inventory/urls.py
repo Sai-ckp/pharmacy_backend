@@ -6,8 +6,13 @@ from .views import (
     MovementsCreateView,
     LowStockView,
     ExpiringView,
+    RackLocationViewSet,
 )
+from rest_framework.routers import DefaultRouter
 
+
+router = DefaultRouter()
+router.register(r'rack-locations', RackLocationViewSet, basename='rack-location')
 
 urlpatterns = [
     path('', HealthView.as_view(), name='inventory-root'),
@@ -17,4 +22,6 @@ urlpatterns = [
     path('low-stock/', LowStockView.as_view(), name='inventory-low-stock'),
     path('expiring/', ExpiringView.as_view(), name='inventory-expiring'),
 ]
+
+urlpatterns += router.urls
 

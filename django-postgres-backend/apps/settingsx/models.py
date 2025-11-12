@@ -46,3 +46,36 @@ class BackupArchive(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True)
 
+
+class PaymentMethod(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=512, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["name"], name="idx_paymethod_name"),
+            models.Index(fields=["is_active"], name="idx_paymethod_active"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PaymentTerm(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    days = models.PositiveIntegerField(default=0)
+    description = models.CharField(max_length=512, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["name"], name="idx_payterm_name"),
+            models.Index(fields=["is_active"], name="idx_payterm_active"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+

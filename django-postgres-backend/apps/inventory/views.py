@@ -1,12 +1,14 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import status, permissions
+from rest_framework import status, permissions, viewsets
 from django.db.models import Q
 from datetime import date
 from decimal import Decimal
 
 from apps.catalog.models import BatchLot
 from .services import stock_on_hand, write_movement, low_stock, near_expiry
+from .models import RackLocation
+from .serializers import RackLocationSerializer
 from apps.settingsx.services import get_setting
 
 
@@ -88,4 +90,22 @@ class ExpiringView(APIView):
             days = int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
         data = near_expiry(days=days, location_id=request.query_params.get("location_id"))
         return Response(data)
+
+
+class RackLocationViewSet(viewsets.ModelViewSet):
+    queryset = RackLocation.objects.all()
+    serializer_class = RackLocationSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        q = self.request.query_params.get("q")
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
+        is_active = self.request.query_params.get("is_active")
+        if is_active in ("true", "false"):
+            qs = qs.filter(is_active=(is_active == "true"))
+        ordering = self.request.query_params.get("ordering")
+        if ordering in ("name", "-name", "created_at", "-created_at"):
+            qs = qs.order_by(ordering)
+        return qs
 

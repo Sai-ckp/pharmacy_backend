@@ -37,3 +37,19 @@ class RackRule(models.Model):
             models.UniqueConstraint(fields=["location", "manufacturer_name"], name="uq_rack_location_manufacturer"),
         ]
 
+
+class RackLocation(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    description = models.CharField(max_length=512, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["name"], name="idx_rackloc_name"),
+            models.Index(fields=["is_active"], name="idx_rackloc_active"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
