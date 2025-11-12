@@ -40,10 +40,38 @@ class BusinessProfileView(generics.RetrieveUpdateAPIView):
 
 class SettingsGroupView(APIView):
     def get(self, request):
+        # Grouped read convenience for UI
         keys = {
-            "alerts": ["expiry_critical_days", "expiry_warning_days", "low_stock_threshold_default", "pending_bill_alert_days"],
-            "tax": ["gst_rate_default", "tax_calc_method"],
-            "billing": [],
+            "alerts": [
+                "ALERT_EXPIRY_CRITICAL_DAYS",
+                "ALERT_EXPIRY_WARNING_DAYS",
+                "ALERT_LOW_STOCK_DEFAULT",
+            ],
+            "tax": [
+                "TAX_GST_RATE",
+                "TAX_CGST_RATE",
+                "TAX_SGST_RATE",
+                "TAX_CALC_METHOD",
+            ],
+            "invoice": [
+                "INVOICE_PREFIX",
+                "INVOICE_START",
+                "INVOICE_TEMPLATE",
+                "INVOICE_FOOTER",
+            ],
+            "notifications": [
+                "NOTIFY_EMAIL_ENABLED",
+                "NOTIFY_LOW_STOCK",
+                "NOTIFY_EXPIRY",
+                "NOTIFY_DAILY_REPORT",
+                "NOTIFY_EMAIL",
+                "NOTIFY_SMS_ENABLED",
+                "NOTIFY_SMS_PHONE",
+                "SMTP_HOST",
+                "SMTP_PORT",
+                "SMTP_USER",
+                "SMTP_PASSWORD",
+            ],
         }
         data = {}
         for group, items in keys.items():

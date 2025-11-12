@@ -26,10 +26,33 @@ class Command(BaseCommand):
             DocCounter.objects.get_or_create(document_type=doc, defaults=dict(prefix=prefix, next_number=1, padding_int=5))
 
         defaults = {
+            # Alerts
             "ALERT_LOW_STOCK_DEFAULT": "50",
             "ALERT_EXPIRY_WARNING_DAYS": "60",
             "ALERT_EXPIRY_CRITICAL_DAYS": "30",
+            # Inventory/stock behavior
             "ALLOW_NEGATIVE_STOCK": "false",
+            # Tax & Billing
+            "TAX_GST_RATE": "12",
+            "TAX_CGST_RATE": "6",
+            "TAX_SGST_RATE": "6",
+            "TAX_CALC_METHOD": "INCLUSIVE",  # INCLUSIVE | EXCLUSIVE
+            "INVOICE_PREFIX": "INV-",
+            "INVOICE_START": "1001",
+            "INVOICE_TEMPLATE": "STANDARD",
+            "INVOICE_FOOTER": "Thank you for choosing our pharmacy",
+            # Notifications
+            "NOTIFY_EMAIL_ENABLED": "false",
+            "NOTIFY_LOW_STOCK": "true",
+            "NOTIFY_EXPIRY": "true",
+            "NOTIFY_DAILY_REPORT": "false",
+            "NOTIFY_EMAIL": "",
+            "NOTIFY_SMS_ENABLED": "false",
+            "NOTIFY_SMS_PHONE": "",
+            "SMTP_HOST": "smtp.gmail.com",
+            "SMTP_PORT": "587",
+            "SMTP_USER": "",
+            "SMTP_PASSWORD": "",
         }
         for k, v in defaults.items():
             SettingKV.objects.get_or_create(key=k, defaults=dict(value=v))
