@@ -24,12 +24,12 @@ class TransferVoucherSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if data["from_location"] == data["to_location"]:
             raise serializers.ValidationError("From and To locations cannot be the same.")
-        if not data.get("lines"):
-            raise serializers.ValidationError("Transfer must include at least one line item.")
         return data
 
     def create(self, validated_data):
-        lines = validated_data.pop("lines")
+        lines = validated_data.pop("lines", [])
+        if not lines:
+            raise serializers.ValidationError("Transfer must include at least one line item.")
         voucher = TransferVoucher.objects.create(**validated_data)
         for l in lines:
             TransferLine.objects.create(voucher=voucher, **l)
@@ -41,6 +41,8 @@ class TransferVoucherSerializer(serializers.ModelSerializer):
             setattr(instance, k, v)
         instance.save()
         if lines is not None:
+            if not lines:
+                raise serializers.ValidationError("Transfer must include at least one line item.")
             instance.lines.all().delete()
             for l in lines:
                 TransferLine.objects.create(voucher=instance, **l)

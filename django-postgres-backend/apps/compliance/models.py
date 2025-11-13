@@ -2,6 +2,7 @@ from django.db import models
 from django.utils import timezone
 
 class Prescription(models.Model):
+    invoice = models.OneToOneField("sales.SalesInvoice",on_delete=models.CASCADE,related_name="prescription",null=True, blank=True)  # keep nullable until migrations run smoothly
     customer = models.ForeignKey('customers.Customer', on_delete=models.PROTECT, related_name='prescriptions')
     doctor_name = models.CharField(max_length=255)
     doctor_reg_no = models.CharField(max_length=128)

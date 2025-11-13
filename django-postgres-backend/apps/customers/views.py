@@ -8,5 +8,6 @@ class CustomerViewSet(viewsets.ModelViewSet):
     serializer_class = CustomerSerializer
     permission_classes = [permissions.AllowAny] #allowany only for the testing purpose,change it later
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["name", "phone", "email", "gstin"]
+    search_fields = ["name", "phone", "email", "gstin", "code"]
     ordering_fields = ["name", "type", "credit_limit", "outstanding_balance"]
+    

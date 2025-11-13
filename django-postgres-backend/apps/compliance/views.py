@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
 from datetime import timedelta
-
+from django_filters.rest_framework import DjangoFilterBackend
 from .models import Prescription, H1RegisterEntry, NDPSDailyEntry, RecallEvent
 from .serializers import (
     PrescriptionSerializer,
@@ -30,12 +30,16 @@ class H1RegisterEntryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = H1RegisterEntry.objects.all()
     serializer_class = H1RegisterEntrySerializer
     permission_classes = [permissions.AllowAny]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["invoice", "product", "batch_lot", "entry_date"]
 
 
 class NDPSDailyEntryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = NDPSDailyEntry.objects.all()
     serializer_class = NDPSDailyEntrySerializer
     permission_classes = [permissions.AllowAny]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["product", "date"]
 
     @action(detail=False, methods=["post"], url_path="recompute")
     def recompute(self, request):

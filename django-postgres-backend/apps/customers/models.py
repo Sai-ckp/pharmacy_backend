@@ -9,6 +9,7 @@ class Customer(models.Model):
         HOSPITAL = "HOSPITAL", "Hospital"
 
     name = models.CharField(max_length=255, blank=False, null=False)
+    code = models.CharField(max_length=64, unique=True)
     phone = models.CharField(max_length=20, unique=True, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     gstin = models.CharField(max_length=32, blank=True, null=True)

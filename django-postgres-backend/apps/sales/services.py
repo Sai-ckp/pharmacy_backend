@@ -18,6 +18,7 @@ CURRENCY_QUANT = Decimal("0.01")
 
 def stock_on_hand(location_id, batch_lot_id):
     from django.db.models import Sum
+
     s = (
         InventoryMovement.objects.filter(
             location_id=location_id, batch_lot_id=batch_lot_id
@@ -46,14 +47,14 @@ def post_invoice(actor, invoice_id):
         .get(pk=invoice_id)
     )
 
-    # Idempotency: if already posted, return current state (safe retry)
+    # Idempotency: already posted → no-op
     if inv.status == SalesInvoice.Status.POSTED:
         return {"invoice_no": inv.invoice_no, "status": inv.status}
 
     if inv.status != SalesInvoice.Status.DRAFT:
         raise ValidationError(f"Cannot post invoice in {inv.status} state.")
 
-    # Compliance: ensure prescription exists if required by lines
+    # Compliance: ensure prescription exists if required
     ensure_prescription_for_invoice(inv)
 
     gross = Decimal("0")
@@ -61,8 +62,11 @@ def post_invoice(actor, invoice_id):
     discount_total = Decimal("0")
     net = Decimal("0")
 
-    # Validate & compute totals + write inventory movements
+    # -----------------------------------------
+    # INVENTORY DEDUCTION + TOTAL COMPUTATION
+    # -----------------------------------------
     for line in inv.lines.all():
+
         available = stock_on_hand(inv.location_id, line.batch_lot_id)
         if available < line.qty_base:
             raise ValidationError(
@@ -73,39 +77,33 @@ def post_invoice(actor, invoice_id):
         qty = Decimal(line.qty_base)
         rate = Decimal(line.rate_per_base)
         disc = Decimal(line.discount_amount or 0)
-        taxable = (qty * rate) - disc
 
-        # tax calculation with small precision then round for currency
-        tax_amt = (taxable * Decimal(line.tax_percent or 0) / Decimal("100")).quantize(AMOUNT_QUANT, rounding=ROUND_HALF_UP)
+        taxable = (qty * rate) - disc
+        tax_amt = (taxable * Decimal(line.tax_percent or 0) / Decimal("100")).quantize(
+            AMOUNT_QUANT, rounding=ROUND_HALF_UP
+        )
         line_total = (taxable + tax_amt).quantize(AMOUNT_QUANT, rounding=ROUND_HALF_UP)
 
-        # update computed fields on line (DB update to keep instance consistent)
-        SalesLine.objects.filter(pk=line.pk).update(
-            tax_amount=tax_amt, line_total=line_total
-        )
+        # update calculated values on DB
+        SalesLine.objects.filter(pk=line.pk).update(tax_amount=tax_amt, line_total=line_total)
 
         gross += qty * rate
         discount_total += disc
         tax_total += tax_amt
         net += line_total
 
-        # deduct stock (use base qty)
-        write_movement(
-            inv.location_id,
-            line.batch_lot_id,
-            -qty,
-            "SALE",
-            "SalesInvoice",
-            inv.id,
-        )
+        # Stock OUT movement
+        write_movement(inv.location_id, line.batch_lot_id, -qty, "SALE", "SalesInvoice", inv.id)
 
-    # Round net totals to currency precision and compute round-off
+    # -----------------------------------------
+    # FINAL TOTALS
+    # -----------------------------------------
     net_rounded = net.quantize(CURRENCY_QUANT, rounding=ROUND_HALF_UP)
     round_off = (net_rounded - net).quantize(CURRENCY_QUANT, rounding=ROUND_HALF_UP)
 
-    inv.gross_total = gross.quantize(CURRENCY_QUANT, rounding=ROUND_HALF_UP)
-    inv.discount_total = discount_total.quantize(CURRENCY_QUANT, rounding=ROUND_HALF_UP)
-    inv.tax_total = tax_total.quantize(CURRENCY_QUANT, rounding=ROUND_HALF_UP)
+    inv.gross_total = gross.quantize(CURRENCY_QUANT)
+    inv.discount_total = discount_total.quantize(CURRENCY_QUANT)
+    inv.tax_total = tax_total.quantize(CURRENCY_QUANT)
     inv.round_off_amount = round_off
     inv.net_total = net_rounded
 
@@ -114,13 +112,72 @@ def post_invoice(actor, invoice_id):
     inv.posted_by = actor
     inv.save()
 
-    # Compliance hooks (create H1 / NDPS entries)
+    # -----------------------------------------
+    # COMPLIANCE (H1 / NDPS)
+    # -----------------------------------------
     create_compliance_entries(inv)
 
-    # Update payments / outstanding
+    # -----------------------------------------
+    # PAYMENT STATUS UPDATE
+    # -----------------------------------------
     _update_payment_status(inv)
 
-    # Audit
+    # -----------------------------------------
+    # NOTIFICATION CHECKS (Low Stock + Expiry)
+    # -----------------------------------------
+    # Import notifications and settings defensively so tests/environments without those modules don't fail.
+    try:
+        from apps.notifications.services import enqueue_once
+    except Exception:
+        enqueue_once = None
+
+    try:
+        from apps.settingsx.services import get_setting
+    except Exception:
+        get_setting = lambda *args, **kwargs: 30
+
+    expiry_window_days = int(get_setting("CRITICAL_EXPIRY_DAYS", 30))
+
+    for line in inv.lines.all():
+        batch = line.batch_lot
+        product = line.product
+
+        # If notifications unavailable skip
+        if enqueue_once is None:
+            continue
+
+        # LOW STOCK CHECK
+        available = stock_on_hand(inv.location_id, batch.id)
+        if available <= product.reorder_level:
+            dedupe_key = f"{inv.location_id}-{batch.id}-LOW_STOCK"
+            enqueue_once(
+                channel="EMAIL",
+                to="alerts@erp.local",
+                subject=f"Low Stock Alert: {product.name}",
+                message=(
+                    f"Stock for {product.name} (Batch {batch.batch_no}) at "
+                    f"{inv.location.name} is low: {available}"
+                ),
+                dedupe_key=dedupe_key,
+            )
+
+        # EXPIRY CHECK
+        # Note: product/batch fields use expiry_date on BatchLot
+        if getattr(batch, "expiry_date", None):
+            days_to_expiry = (batch.expiry_date - timezone.now().date()).days
+            if days_to_expiry <= expiry_window_days:
+                dedupe_key = f"{inv.location_id}-{batch.id}-EXPIRY"
+                enqueue_once(
+                    channel="EMAIL",
+                    to="alerts@erp.local",
+                    subject=f"Expiry Alert: {product.name}",
+                    message=(f"Batch {batch.batch_no} of {product.name} expires on {batch.expiry_date}."),
+                    dedupe_key=dedupe_key,
+                )
+
+    # -----------------------------------------
+    # AUDIT LOGGING
+    # -----------------------------------------
     _audit(actor, "sales_invoices", inv.id, "POST")
 
     return {"invoice_no": inv.invoice_no, "status": inv.status}
@@ -154,6 +211,7 @@ def cancel_invoice(actor, invoice_id):
 
 def _update_payment_status(inv):
     """Recalculate invoice payment status and persist totals."""
+    # refresh relations to read fresh payments
     inv.refresh_from_db(fields=[])
 
     payments_total = Decimal("0")
@@ -161,9 +219,9 @@ def _update_payment_status(inv):
         payments_total += Decimal(p.amount)
 
     inv.total_paid = payments_total.quantize(CURRENCY_QUANT, rounding=ROUND_HALF_UP)
-    inv.outstanding = (
-        Decimal(inv.net_total or 0) - inv.total_paid
-    ).quantize(CURRENCY_QUANT, rounding=ROUND_HALF_UP)
+    inv.outstanding = (Decimal(inv.net_total or 0) - inv.total_paid).quantize(
+        CURRENCY_QUANT, rounding=ROUND_HALF_UP
+    )
 
     if inv.total_paid >= (inv.net_total or Decimal("0")):
         inv.payment_status = SalesInvoice.PaymentStatus.PAID
@@ -176,13 +234,19 @@ def _update_payment_status(inv):
     return inv
 
 
-# ✅ Add this function at the very end of file
 def _audit(actor, table_name, record_id, action):
-    """Generic audit trail creation."""
+    """Generic audit trail creation. Avoid FK errors during tests."""
+    try:
+        actor_id = actor.id if actor and hasattr(actor, "id") else None
+    except:
+        actor_id = None
+
     AuditLog.objects.create(
-        actor_user_id=getattr(actor, "id", None),
+        actor_user_id=actor_id,
         action=action,
         table_name=table_name,
         record_id=record_id,
         created_at=timezone.now(),
     )
+
+

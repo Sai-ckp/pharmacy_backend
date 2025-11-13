@@ -82,5 +82,15 @@ class SalesPayment(models.Model):
     received_at = models.DateTimeField(default=timezone.now)
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+        # Auto-update invoice totals
+        try:
+            from apps.sales.services import _update_payment_status
+            _update_payment_status(self.sale_invoice)
+        except Exception:
+            pass
+
     def __str__(self):
         return f"{self.sale_invoice.invoice_no or self.sale_invoice.pk} - {self.amount}"

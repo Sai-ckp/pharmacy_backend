@@ -3,7 +3,6 @@ from .models import Notification
 import requests, smtplib, json
 from email.mime.text import MIMEText
 
-
 def dispatch_notification(notif: Notification):
     """Routes to the correct send method based on channel."""
     if notif.channel == Notification.Channel.EMAIL:
@@ -69,3 +68,25 @@ def _send_webhook(notif: Notification):
         notif.error = f"HTTP {resp.status_code}: {resp.text[:250]}"
     notif.save(update_fields=["status", "sent_at", "error"])
     return notif.status == Notification.Status.SENT
+
+
+
+def enqueue_once(channel, to, subject, message, payload=None, dedupe_key=None):
+    """
+    Enqueue notification only once per request using a dedupe_key.
+    dedupe_key example: f"{location_id}-{batch_id}-LOW_STOCK"
+    """
+    if dedupe_key:
+        if Notification.objects.filter(payload__dedupe_key=dedupe_key).exists():
+            return  # Skip duplicate
+
+    Notification.objects.create(
+        channel=channel,
+        to=to,
+        subject=subject,
+        message=message,
+        payload={"dedupe_key": dedupe_key, **(payload or {})},
+        status=Notification.Status.QUEUED,
+        created_at=timezone.now(),
+    )
+

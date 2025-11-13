@@ -25,8 +25,17 @@ def write_movement(location_id, batch_lot_id, qty_delta, reason, ref_doc_type, r
 @transaction.atomic
 def post_transfer(actor, voucher_id):
     """POST (OUT only) — marks IN_TRANSIT and writes TRANSFER_OUT."""
-    v = TransferVoucher.objects.select_for_update().prefetch_related("lines__batch_lot").get(pk=voucher_id)
+    v = (
+        TransferVoucher.objects.select_for_update()
+        .prefetch_related("lines__batch_lot")
+        .get(pk=voucher_id)
+    )
 
+    # ✅ Idempotency guard
+    if v.status == TransferVoucher.Status.IN_TRANSIT:
+        return {"voucher_id": v.id, "status": v.status}
+    if v.status == TransferVoucher.Status.RECEIVED:
+        return {"voucher_id": v.id, "status": v.status}
     if v.status != TransferVoucher.Status.DRAFT:
         raise ValidationError(f"Cannot post transfer in status {v.status}")
 
@@ -35,39 +44,123 @@ def post_transfer(actor, voucher_id):
         if available < l.qty_base:
             raise ValidationError(f"Insufficient stock for batch {l.batch_lot.batch_no}")
 
-        # Write OUT
-        write_movement(v.from_location_id, l.batch_lot_id, -l.qty_base, "TRANSFER_OUT", "TransferVoucher", v.id)
+        # ✅ Check if OUT already exists
+        existing = InventoryMovement.objects.filter(
+            ref_doc_type="TransferVoucher",
+            ref_doc_id=v.id,
+            reason="TRANSFER_OUT",
+            batch_lot_id=l.batch_lot_id,
+        ).exists()
+        if not existing:
+            write_movement(
+                v.from_location_id,
+                l.batch_lot_id,
+                -l.qty_base,
+                "TRANSFER_OUT",
+                "TransferVoucher",
+                v.id,
+            )
 
     v.status = TransferVoucher.Status.IN_TRANSIT
     v.posted_at = timezone.now()
     v.posted_by = actor
-    v.save()
+    v.save(update_fields=["status", "posted_at", "posted_by"])
+
     _audit(actor, "transfer_vouchers", v.id, "POST_OUT")
     return {"voucher_id": v.id, "status": v.status}
+
 
 @transaction.atomic
 def receive_transfer(actor, voucher_id):
     """Receive step — adds TRANSFER_IN, marks RECEIVED."""
-    v = TransferVoucher.objects.select_for_update().prefetch_related("lines").get(pk=voucher_id)
+    v = (
+        TransferVoucher.objects.select_for_update()
+        .prefetch_related("lines__batch_lot", "lines__batch_lot__product")
+        .get(pk=voucher_id)
+    )
 
     if v.status != TransferVoucher.Status.IN_TRANSIT:
         raise ValidationError(f"Cannot receive voucher in status {v.status}")
 
+    # -----------------------------------------
+    # INVENTORY TRANSFER_IN (idempotent)
+    # -----------------------------------------
     for l in v.lines.all():
-        # Check idempotency — if already received, skip
         existing = InventoryMovement.objects.filter(
             ref_doc_type="TransferVoucher",
             ref_doc_id=v.id,
             reason="TRANSFER_IN",
             batch_lot_id=l.batch_lot_id,
         ).exists()
-        if not existing:
-            write_movement(v.to_location_id, l.batch_lot_id, l.qty_base, "TRANSFER_IN", "TransferVoucher", v.id)
 
+        if not existing:
+            write_movement(
+                v.to_location_id,
+                l.batch_lot_id,
+                l.qty_base,
+                "TRANSFER_IN",
+                "TransferVoucher",
+                v.id,
+            )
+
+    # -----------------------------------------
+    # UPDATE STATUS
+    # -----------------------------------------
     v.status = TransferVoucher.Status.RECEIVED
     v.save(update_fields=["status"])
+
+    # -----------------------------------------
+    # NOTIFICATIONS (Low Stock + Expiry)
+    # -----------------------------------------
+    from apps.notifications.services import enqueue_once
+    from apps.settingsx.services import get_setting
+    expiry_window_days = int(get_setting("CRITICAL_EXPIRY_DAYS", 30))
+
+    for l in v.lines.all():
+        batch = l.batch_lot
+        product = batch.product
+
+        # Check stock at destination after receiving
+        available = stock_on_hand(v.to_location_id, batch.id)
+
+        # 1. LOW STOCK NOTIFICATION
+        if available <= product.reorder_level:
+            dedupe_key = f"{v.to_location_id}-{batch.id}-LOW_STOCK"
+
+            enqueue_once(
+                channel="EMAIL",
+                to="alerts@erp.local",
+                subject=f"Low Stock Alert After Transfer: {product.name}",
+                message=(
+                    f"Stock for {product.name} (Batch {batch.batch_no}) at "
+                    f"{v.to_location.name} is low: {available}"
+                ),
+                dedupe_key=dedupe_key,
+            )
+
+        # 2. EXPIRY ALERT
+        if batch.expiry:
+            days_to_expiry = (batch.expiry - timezone.now().date()).days
+            if days_to_expiry <= expiry_window_days:
+                dedupe_key = f"{v.to_location_id}-{batch.id}-EXPIRY"
+
+                enqueue_once(
+                    channel="EMAIL",
+                    to="alerts@erp.local",
+                    subject=f"Expiry Alert: {product.name}",
+                    message=(
+                        f"Batch {batch.batch_no} of {product.name} expires on {batch.expiry}."
+                    ),
+                    dedupe_key=dedupe_key,
+                )
+
+    # -----------------------------------------
+    # AUDIT LOG
+    # -----------------------------------------
     _audit(actor, "transfer_vouchers", v.id, "RECEIVE")
+
     return {"voucher_id": v.id, "status": v.status}
+
 
 @transaction.atomic
 def cancel_transfer(actor, voucher_id):
