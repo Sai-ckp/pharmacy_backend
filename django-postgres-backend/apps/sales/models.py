@@ -1,8 +1,8 @@
+# apps/sales/models.py
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
 from decimal import Decimal
-
 
 class SalesInvoice(models.Model):
     class Status(models.TextChoices):
@@ -15,7 +15,8 @@ class SalesInvoice(models.Model):
         PARTIAL = "PARTIAL", "Partial"
         CREDIT = "CREDIT", "Credit"
 
-    invoice_no = models.CharField(max_length=64, unique=True)
+    # allow blank so we can auto-generate on create
+    invoice_no = models.CharField(max_length=64, unique=True, blank=True, null=True)
     location = models.ForeignKey("locations.Location", on_delete=models.PROTECT)
     customer = models.ForeignKey("customers.Customer", on_delete=models.PROTECT)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -28,6 +29,10 @@ class SalesInvoice(models.Model):
     tax_total = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     round_off_amount = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     net_total = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+
+    # new summary/payment fields
+    total_paid = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0.00"))
+    outstanding = models.DecimalField(max_digits=14, decimal_places=4, default=Decimal("0.00"))
 
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
     posted_at = models.DateTimeField(blank=True, null=True)
@@ -49,7 +54,7 @@ class SalesInvoice(models.Model):
         ordering = ["-invoice_date"]
 
     def __str__(self):
-        return self.invoice_no
+        return self.invoice_no or f"Invoice:{self.pk}"
 
 
 class SalesLine(models.Model):
@@ -78,4 +83,4 @@ class SalesPayment(models.Model):
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
 
     def __str__(self):
-        return f"{self.sale_invoice.invoice_no} - {self.amount}"
+        return f"{self.sale_invoice.invoice_no or self.sale_invoice.pk} - {self.amount}"

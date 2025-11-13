@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('settingsx', '0003_settingkv_delete_settings'),
+        ('settingsx', '0001_initial'),
     ]
 
     operations = [
