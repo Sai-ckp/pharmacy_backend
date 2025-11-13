@@ -1,0 +1,16 @@
+{
+  "info": {
+    "name": "Pharmacy API Day 1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {"name": "Accounts", "item": [{"name": "GET /accounts", "request": {"method": "GET", "url": "http://localhost:8000/api/v1/accounts/"}}]},
+    {"name": "Locations", "item": [{"name": "GET /locations", "request": {"method": "GET", "url": "http://localhost:8000/api/v1/locations/"}}]},
+    {"name": "Catalog", "item": [{"name": "GET /catalog", "request": {"method": "GET", "url": "http://localhost:8000/api/v1/catalog/"}}]},
+    {"name": "Inventory", "item": [{"name": "GET /inventory", "request": {"method": "GET", "url": "http://localhost:8000/api/v1/inventory/"}}]},
+    {"name": "Procurement", "item": [{"name": "GET /procurement", "request": {"method": "GET", "url": "http://localhost:8000/api/v1/procurement/"}}]},
+    {"name": "Settings", "item": [{"name": "GET /settings", "request": {"method": "GET", "url": "http://localhost:8000/api/v1/settings/"}}]},
+    {"name": "Governance", "item": [{"name": "GET /governance", "request": {"method": "GET", "url": "http://localhost:8000/api/v1/governance/"}}]}
+  ]
+}
+

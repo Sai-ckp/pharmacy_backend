@@ -1,0 +1,122 @@
+[
+  {
+    "model": "catalog.productcategory",
+    "pk": 1,
+    "fields": {
+      "name": "Analgesics",
+      "is_active": true
+    }
+  },
+  {
+    "model": "catalog.productcategory",
+    "pk": 2,
+    "fields": {
+      "name": "Antibiotics",
+      "is_active": true
+    }
+  },
+  {
+    "model": "catalog.productcategory",
+    "pk": 3,
+    "fields": {
+      "name": "Vitamins",
+      "is_active": true
+    }
+  },
+  {
+    "model": "catalog.product",
+    "pk": 1,
+    "fields": {
+      "category": 1,
+      "name": "Paracetamol 500mg Tablet",
+      "hsn": "30049099",
+      "schedule": "OTC",
+      "manufacturer": "Cipla Ltd",
+      "mrp": "35.000",
+      "is_sensitive": false,
+      "is_active": true,
+      "base_unit": "tablet",
+      "pack_unit": "strip",
+      "units_per_pack": "10.000",
+      "base_unit_step": "1.000",
+      "reorder_level": "20.000"
+    }
+  },
+  {
+    "model": "catalog.product",
+    "pk": 2,
+    "fields": {
+      "category": 2,
+      "name": "Amoxicillin 250mg Capsule",
+      "hsn": "30031020",
+      "schedule": "H",
+      "manufacturer": "Sun Pharma",
+      "mrp": "90.000",
+      "is_sensitive": true,
+      "is_active": true,
+      "base_unit": "capsule",
+      "pack_unit": "strip",
+      "units_per_pack": "10.000",
+      "base_unit_step": "1.000",
+      "reorder_level": "15.000"
+    }
+  },
+  {
+    "model": "catalog.product",
+    "pk": 3,
+    "fields": {
+      "category": 3,
+      "name": "Vitamin C 500mg Tablet",
+      "hsn": "21069099",
+      "schedule": "OTC",
+      "manufacturer": "GlaxoSmithKline",
+      "mrp": "60.000",
+      "is_sensitive": false,
+      "is_active": true,
+      "base_unit": "tablet",
+      "pack_unit": "strip",
+      "units_per_pack": "15.000",
+      "base_unit_step": "1.000",
+      "reorder_level": "25.000"
+    }
+  },
+  {
+    "model": "catalog.batchlot",
+    "pk": 1,
+    "fields": {
+      "product": 1,
+      "batch_no": "PCT500A1",
+      "expiry_date": "2026-06-30",
+      "status": "ACTIVE",
+      "rack_no": "R1-A",
+      "recall_reason": "",
+      "created_at": "2025-11-07T09:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.batchlot",
+    "pk": 2,
+    "fields": {
+      "product": 2,
+      "batch_no": "AMX250B2",
+      "expiry_date": "2026-04-30",
+      "status": "ACTIVE",
+      "rack_no": "R1-B",
+      "recall_reason": "",
+      "created_at": "2025-11-07T09:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.batchlot",
+    "pk": 3,
+    "fields": {
+      "product": 3,
+      "batch_no": "VITC500C3",
+      "expiry_date": "2026-08-31",
+      "status": "ACTIVE",
+      "rack_no": "R1-C",
+      "recall_reason": "",
+      "created_at": "2025-11-07T09:00:00Z"
+    }
+  }
+]

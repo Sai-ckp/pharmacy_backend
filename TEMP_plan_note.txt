@@ -1,0 +1,1 @@
+Reading settings and urls to wire DRF and Postgres.

@@ -1,0 +1,3 @@
+
+# Auto-resolve Django migration conflicts by keeping our branch's version
+apps/**/migrations/*.py merge=ours

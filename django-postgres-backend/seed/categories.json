@@ -1,0 +1,5 @@
+[
+  {"model": "catalog.productcategory", "pk": 1, "fields": {"name": "Analgesics", "is_active": true}},
+  {"model": "catalog.productcategory", "pk": 2, "fields": {"name": "Cough & Cold", "is_active": true}},
+  {"model": "catalog.productcategory", "pk": 3, "fields": {"name": "Antibiotics", "is_active": true}}
+]

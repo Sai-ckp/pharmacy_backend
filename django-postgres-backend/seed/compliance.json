@@ -1,0 +1,79 @@
+[
+  {
+    "model": "compliance.prescription",
+    "pk": 1,
+    "fields": {
+      "customer": 1,
+      "doctor_name": "Dr. Meena",
+      "doctor_reg_no": "KMC/12345",
+      "prescription_no": "RX001",
+      "issue_date": "2025-11-01",
+      "valid_till": "2025-12-01",
+      "attachment_url": "https://example.com/prescriptions/ravi_kumar_rx001.jpg",
+      "captured_by": 1,
+      "created_at": "2025-11-07T09:00:00Z",
+      "updated_at": "2025-11-07T09:00:00Z"
+    }
+  },
+  {
+    "model": "compliance.prescription",
+    "pk": 2,
+    "fields": {
+      "customer": 2,
+      "doctor_name": "Dr. Ramesh",
+      "doctor_reg_no": "KMC/98765",
+      "prescription_no": "RX002",
+      "issue_date": "2025-10-15",
+      "valid_till": "2025-11-15",
+      "attachment_url": "https://example.com/prescriptions/asha_rao_rx002.jpg",
+      "captured_by": 1,
+      "created_at": "2025-11-07T09:05:00Z",
+      "updated_at": "2025-11-07T09:05:00Z"
+    }
+  },
+  {
+    "model": "compliance.h1registerentry",
+    "pk": 1,
+    "fields": {
+      "invoice": 1,
+      "line": 1,
+      "product": 1,
+      "batch_lot": 1,
+      "drug_name_snapshot": "Codeine Phosphate",
+      "batch_no_snapshot": "C12345",
+      "expiry_snapshot": "2026-03-31",
+      "patient_name": "Rajesh Sharma",
+      "patient_address": "Bangalore, Karnataka",
+      "doctor_name": "Dr. Vinay",
+      "doctor_reg_no": "KMC/54321",
+      "qty_issued_base": 5.0000,
+      "balance_after_issue_base": 45.0000,
+      "entry_date": "2025-11-07"
+    }
+  },
+  {
+    "model": "compliance.ndpsdailyentry",
+    "pk": 1,
+    "fields": {
+      "date": "2025-11-07",
+      "product": 1,
+      "opening_qty_base": 100.0000,
+      "in_qty_base": 0.0000,
+      "out_qty_base": 10.0000,
+      "closing_qty_base": 90.0000,
+      "remarks": "Issued for ward stock"
+    }
+  },
+  {
+    "model": "compliance.recallevent",
+    "pk": 1,
+    "fields": {
+      "product": 1,
+      "batch_lot": 1,
+      "reason": "Foreign particles found",
+      "initiated_at": "2025-11-05T10:00:00Z",
+      "status": "OPEN",
+      "notes": "Awaiting vendor inspection report"
+    }
+  }
+]
