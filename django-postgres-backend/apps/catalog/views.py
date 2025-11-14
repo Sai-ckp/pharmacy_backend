@@ -2,6 +2,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets
 from django.db import models
+from drf_spectacular.utils import extend_schema, OpenApiTypes
 from django.utils import timezone
 from datetime import timedelta
 from .models import ProductCategory, Product, BatchLot, MedicineForm, Uom, VendorProductCode
@@ -138,6 +139,7 @@ class VendorProductCodeViewSet(viewsets.ModelViewSet):
 
 
 class CatalogStatsView(APIView):
+    @extend_schema(tags=["Catalog"], summary="Catalog stats (active products & categories)", responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
         from .models import ProductCategory, Product
         return Response({

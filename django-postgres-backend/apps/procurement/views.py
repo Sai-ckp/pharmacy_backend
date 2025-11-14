@@ -1,6 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import viewsets, status
+from drf_spectacular.utils import extend_schema, OpenApiTypes, OpenApiExample, OpenApiParameter
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from django.db import transaction
@@ -101,6 +102,11 @@ class GoodsReceiptViewSet(viewsets.ModelViewSet):
 
 
 class GrnImportPdfView(APIView):
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Parse GRN PDF and return preview (OCR fallback)",
+        responses={200: OpenApiTypes.OBJECT, 422: OpenApiTypes.OBJECT},
+    )
     def post(self, request):
         file = request.FILES.get("file")
         if not file:
@@ -110,6 +116,16 @@ class GrnImportPdfView(APIView):
 
 
 class PoImportCommitView(APIView):
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Create a PO from parsed/imported lines (server computes totals)",
+        request=OpenApiTypes.OBJECT,
+        responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+        examples=[OpenApiExample("PO Commit", value={
+            "vendor_id": 3, "location_id": 1,
+            "lines": [{"vendor_code": "CIP-TAB-500", "qty": 2, "unit_cost": "45.00", "gst_percent": "12"}]
+        })]
+    )
     @transaction.atomic
     def post(self, request):
         vendor_id = request.data.get("vendor_id") or request.data.get("vendor")
@@ -149,6 +165,12 @@ class PoImportCommitView(APIView):
 
 
 class GrnImportCommitView(APIView):
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Create DRAFT GRN from parsed/imported lines against a PO",
+        request=OpenApiTypes.OBJECT,
+        responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    )
     @transaction.atomic
     def post(self, request):
         vendor_id = request.data.get("vendor_id") or request.data.get("vendor")
@@ -190,6 +212,12 @@ class GrnImportCommitView(APIView):
 
 
 class PurchasesMonthlyStatsView(APIView):
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Monthly purchases value series (from posted GRNs)",
+        parameters=[OpenApiParameter("months", OpenApiTypes.INT, OpenApiParameter.QUERY), OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY)],
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         months = int(request.query_params.get("months", 6))
         location_id = request.query_params.get("location_id")

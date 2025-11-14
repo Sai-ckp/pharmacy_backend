@@ -1,6 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import generics, viewsets, status
+from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParameter, OpenApiTypes
 from .models import SettingKV, BusinessProfile, DocCounter
 from .serializers import (
     SettingsSerializer, BusinessProfileSerializer, DocCounterSerializer,
@@ -39,6 +40,11 @@ class BusinessProfileView(generics.RetrieveUpdateAPIView):
 
 
 class SettingsGroupView(APIView):
+    @extend_schema(
+        tags=["Settings"],
+        summary="Get grouped application settings",
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         # Grouped read convenience for UI
         keys = {
@@ -88,6 +94,31 @@ class SettingsGroupView(APIView):
 
 
 class SettingsGroupSaveView(APIView):
+    @extend_schema(
+        tags=["Settings"],
+        summary="Batch save grouped settings (alerts/tax/invoice/notifications/backups)",
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT},
+        examples=[
+            OpenApiExample(
+                "Tax & Invoice Save",
+                value={
+                    "tax": {
+                        "TAX_GST_RATE": "12",
+                        "TAX_CGST_RATE": "6",
+                        "TAX_SGST_RATE": "6",
+                        "TAX_CALC_METHOD": "INCLUSIVE",
+                    },
+                    "invoice": {
+                        "INVOICE_PREFIX": "INV-",
+                        "INVOICE_START": "1001",
+                        "INVOICE_TEMPLATE": "STANDARD",
+                        "INVOICE_FOOTER": "Thank you",
+                    },
+                },
+            )
+        ],
+    )
     def post(self, request):
         # Accept nested dict of {group: {KEY: value}}
         payload = request.data or {}
@@ -125,12 +156,26 @@ class DocCounterViewSet(viewsets.ModelViewSet):
 
 
 class KVDetailView(APIView):
+    @extend_schema(
+        tags=["Settings"],
+        summary="Read a single setting by key",
+        parameters=[OpenApiParameter(name="key", type=str, location=OpenApiParameter.PATH)],
+        responses={200: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT},
+    )
     def get(self, request, key: str):
         val = services.get_setting(key)
         if val is None:
             return Response({"key": key, "value": None}, status=status.HTTP_404_NOT_FOUND)
         return Response({"key": key, "value": val})
 
+    @extend_schema(
+        tags=["Settings"],
+        summary="Upsert a single setting by key",
+        parameters=[OpenApiParameter(name="key", type=str, location=OpenApiParameter.PATH)],
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+        examples=[OpenApiExample("Set GST", value={"value": "12"})],
+    )
     def put(self, request, key: str):
         value = request.data.get("value")
         if value is None:
@@ -140,6 +185,15 @@ class KVDetailView(APIView):
 
 
 class DocCounterNextView(APIView):
+    @extend_schema(
+        tags=["Settings"],
+        summary="Get next formatted document number",
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+        examples=[
+            OpenApiExample("Next PO Number", value={"document_type": "PO", "prefix": "PO-", "padding": 5})
+        ],
+    )
     def post(self, request):
         document_type = request.data.get("document_type")
         prefix = request.data.get("prefix", "")
@@ -153,7 +207,13 @@ class DocCounterNextView(APIView):
 
 class BackupRestoreView(APIView):
     permission_classes = [IsAdmin]
-
+    @extend_schema(
+        tags=["Settings"],
+        summary="Restore database from a backup archive (Admin)",
+        request=OpenApiTypes.OBJECT,
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+        examples=[OpenApiExample("Restore", value={"archive_id": 7})],
+    )
     def post(self, request):
         archive_id = request.data.get("archive_id")
         if not archive_id:
@@ -167,7 +227,11 @@ class BackupRestoreView(APIView):
 
 class BackupCreateView(APIView):
     permission_classes = [IsAdmin]
-
+    @extend_schema(
+        tags=["Settings"],
+        summary="Create a full backup archive (Admin)",
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def post(self, request):
         result = create_backup(actor=request.user)
         return Response(result)

@@ -1,6 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import status, permissions, viewsets
+from drf_spectacular.utils import extend_schema, OpenApiTypes, OpenApiParameter, OpenApiExample
 from django.db.models import Q
 from datetime import date
 from decimal import Decimal
@@ -19,6 +20,16 @@ class HealthView(APIView):
 
 
 class BatchesListView(APIView):
+    @extend_schema(
+        tags=["Inventory"],
+        summary="List batch lots with optional filters",
+        parameters=[
+            OpenApiParameter("product_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("status", OpenApiTypes.STR, OpenApiParameter.QUERY),
+            OpenApiParameter("exp_range", OpenApiTypes.STR, OpenApiParameter.QUERY, description="YYYY-MM-DD:YYYY-MM-DD"),
+        ],
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         status_f = request.query_params.get("status")
         product_id = request.query_params.get("product_id")
@@ -40,6 +51,15 @@ class BatchesListView(APIView):
 
 
 class StockOnHandView(APIView):
+    @extend_schema(
+        tags=["Inventory"],
+        summary="Stock on hand for a batch at a location",
+        parameters=[
+            OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("batch_lot_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True),
+        ],
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         location_id = request.query_params.get("location_id")
         batch_lot_id = request.query_params.get("batch_lot_id")
@@ -51,7 +71,13 @@ class StockOnHandView(APIView):
 
 class MovementsCreateView(APIView):
     permission_classes = [permissions.IsAdminUser]
-
+    @extend_schema(
+        tags=["Inventory"],
+        summary="Create an inventory movement (Admin)",
+        request=OpenApiTypes.OBJECT,
+        responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+        examples=[OpenApiExample("Adjust IN", value={"location_id":1, "batch_lot_id":10, "qty_change_base":"100.000", "reason":"ADJUSTMENT"})]
+    )
     def post(self, request):
         location_id = int(request.data.get("location_id"))
         batch_lot_id = int(request.data.get("batch_lot_id"))
@@ -73,6 +99,16 @@ class MovementsCreateView(APIView):
 
 
 class MovementsListView(APIView):
+    @extend_schema(
+        tags=["Inventory"],
+        summary="List inventory movements",
+        parameters=[
+            OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("batch_lot_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+            OpenApiParameter("reason", OpenApiTypes.STR, OpenApiParameter.QUERY),
+        ],
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         from .models import InventoryMovement
         qs = InventoryMovement.objects.all().order_by('-created_at')
@@ -90,6 +126,12 @@ class MovementsListView(APIView):
 
 
 class LowStockView(APIView):
+    @extend_schema(
+        tags=["Inventory"],
+        summary="List low stock products at a location",
+        parameters=[OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True)],
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         location_id = request.query_params.get("location_id")
         if not location_id:
@@ -99,6 +141,15 @@ class LowStockView(APIView):
 
 
 class ExpiringView(APIView):
+    @extend_schema(
+        tags=["Inventory"],
+        summary="List expiring batches",
+        parameters=[
+            OpenApiParameter("window", OpenApiTypes.STR, OpenApiParameter.QUERY, description="warning|critical"),
+            OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY),
+        ],
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         window = request.query_params.get("window")
         days = None
@@ -111,6 +162,12 @@ class ExpiringView(APIView):
 
 
 class InventoryStatsView(APIView):
+    @extend_schema(
+        tags=["Inventory"],
+        summary="Inventory status counts for a location",
+        parameters=[OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True)],
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         location_id = request.query_params.get("location_id")
         if not location_id:
@@ -120,6 +177,15 @@ class InventoryStatsView(APIView):
 
 
 class StockSummaryView(APIView):
+    @extend_schema(
+        tags=["Inventory"],
+        summary="Stock summary for product at a location",
+        parameters=[
+            OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("product_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True),
+        ],
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         location_id = request.query_params.get("location_id")
         product_id = request.query_params.get("product_id")
@@ -131,7 +197,26 @@ class StockSummaryView(APIView):
 
 class AddMedicineView(APIView):
     permission_classes = [permissions.IsAdminUser]
-
+    @extend_schema(
+        tags=["Inventory"],
+        summary="Add new medicine (product + batch + opening stock) in one call (Admin)",
+        request=OpenApiTypes.OBJECT,
+        responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+        examples=[
+            OpenApiExample(
+                "Add Medicine",
+                value={
+                    "location_id": 1,
+                    "product": {
+                        "code": "PARA500", "name": "Paracetamol 500mg", "mrp": "5.00",
+                        "base_unit": "TAB", "pack_unit": "STRIP", "units_per_pack": "10.000"
+                    },
+                    "batch": {"batch_no": "BTH-2024-078", "expiry_date": "2025-12-20"},
+                    "opening_qty_packs": "200"
+                },
+            )
+        ],
+    )
     @transaction.atomic
     def post(self, request):
         from apps.catalog.models import Product, BatchLot
