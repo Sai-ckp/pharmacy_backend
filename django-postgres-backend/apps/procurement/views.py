@@ -156,6 +156,41 @@ class VendorReturnViewSet(viewsets.ModelViewSet):
         post_vendor_return(vr.id, actor=request.user if request.user.is_authenticated else None)
         return Response({"posted": True})
 
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Create vendor return by batch (helper)",
+        request=OpenApiTypes.OBJECT,
+        responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["post"], url_path="create-by-batch")
+    @transaction.atomic
+    def create_by_batch(self, request):
+        from .models import PurchaseOrderLine, PurchaseOrder
+        from apps.catalog.models import BatchLot
+        batch_lot_id = request.data.get("batch_lot_id")
+        qty_base = request.data.get("qty_base")
+        reason = request.data.get("reason", "EXPIRY_RETURN")
+        if not batch_lot_id or qty_base is None:
+            return Response({"detail": "batch_lot_id and qty_base are required"}, status=status.HTTP_400_BAD_REQUEST)
+        lot = get_object_or_404(BatchLot, pk=batch_lot_id)
+        # Find latest PO line for this product and vendor via PO with same vendor as last GRN if possible
+        pol = (
+            PurchaseOrderLine.objects.filter(product_id=lot.product_id)
+            .select_related("po")
+            .order_by("-po__order_date")
+            .first()
+        )
+        if not pol:
+            return Response({"detail": "No purchase order line found for this product."}, status=status.HTTP_400_BAD_REQUEST)
+        vr = VendorReturn.objects.create(
+            vendor=pol.po.vendor,
+            purchase_line=pol,
+            batch_lot=lot,
+            qty_base=qty_base,
+            reason=reason,
+        )
+        return Response(VendorReturnSerializer(vr).data, status=status.HTTP_201_CREATED)
+
 
 class PurchaseOrderViewSet(viewsets.ModelViewSet):
     queryset = PurchaseOrder.objects.all().prefetch_related("lines")

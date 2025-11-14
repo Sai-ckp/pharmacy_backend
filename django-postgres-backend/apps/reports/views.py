@@ -149,6 +149,8 @@ class ExpiryReportView(viewsets.ViewSet):
     def list(self, request):
         from apps.inventory.services import near_expiry
         from apps.settingsx.services import get_setting
+        from apps.catalog.models import Product
+        from apps.procurement.models import GoodsReceipt, GoodsReceiptLine
         location_id = request.query_params.get("location_id")
         window = request.query_params.get("window") or "all"
         warn_days = int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
@@ -158,6 +160,20 @@ class ExpiryReportView(viewsets.ViewSet):
         out = []
         from datetime import date as _date
         today = _date.today()
+        # Preload product data
+        pids = list({r.get("product_id") for r in rows})
+        products = {p.id: p for p in Product.objects.filter(id__in=pids)}
+        # Vendor lookup by last GRN for batch
+        batch_ids = [r.get("batch_lot_id") for r in rows]
+        last_grn = (
+            GoodsReceiptLine.objects.filter(grn__status=GoodsReceipt.Status.POSTED, grn__location_id=location_id, grn__lines__isnull=False, grn__id=GoodsReceiptLine.objects.filter(batch_no__isnull=False).values('grn'))
+        )
+        # Simple vendor mapping: latest GRN per batch
+        vendor_by_batch = {}
+        for gl in GoodsReceiptLine.objects.filter(grn__status=GoodsReceipt.Status.POSTED, grn__location_id=location_id, grn__lines__isnull=False).select_related('grn__po__vendor').order_by('-grn__received_at'):
+            key = (gl.product_id, gl.batch_no)
+            if key not in vendor_by_batch and gl.grn and gl.grn.po and gl.grn.po.vendor:
+                vendor_by_batch[key] = gl.grn.po.vendor.name
         for r in rows:
             exp = r.get("expiry_date")
             days_left = (exp - today).days if exp else None
@@ -167,14 +183,29 @@ class ExpiryReportView(viewsets.ViewSet):
                     status_txt = "Critical"
                 elif days_left <= warn_days:
                     status_txt = "Warning"
+            pid = r.get("product_id")
+            prod = products.get(pid)
+            qty_base = r.get("stock_base") or 0
+            stock_value = None
+            if prod and prod.units_per_pack and prod.units_per_pack != 0:
+                try:
+                    price_per_base = float(prod.mrp) / float(prod.units_per_pack)
+                    stock_value = round(float(qty_base) * price_per_base, 2)
+                except Exception:
+                    stock_value = None
+            supplier = vendor_by_batch.get((pid, r.get("batch_no")))
             item = {
-                "product_id": r.get("product_id"),
+                "product_id": pid,
+                "product_name": getattr(prod, 'name', None),
+                "category": getattr(getattr(prod, 'category', None), 'name', None),
                 "batch_lot_id": r.get("batch_lot_id"),
                 "batch_no": r.get("batch_no"),
                 "expiry_date": exp,
                 "days_left": days_left,
                 "status": status_txt,
-                "quantity": float(r.get("stock_base") or 0),
+                "quantity": float(qty_base),
+                "stock_value": stock_value,
+                "supplier": supplier,
             }
             if window == "critical" and status_txt != "Critical":
                 continue
@@ -182,6 +213,56 @@ class ExpiryReportView(viewsets.ViewSet):
                 continue
             out.append(item)
         return Response(out)
+
+
+class ExpirySummaryView(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Reports"],
+        summary="Expiry KPIs (critical/warning/safe + at-risk value)",
+        parameters=[OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY)],
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def list(self, request):
+        from apps.settingsx.services import get_setting
+        from apps.catalog.models import Product
+        from apps.inventory.services import near_expiry
+        location_id = request.query_params.get("location_id")
+        warn_days = int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
+        crit_days = int(get_setting("ALERT_EXPIRY_CRITICAL_DAYS", "30") or 30)
+        rows = near_expiry(days=warn_days, location_id=location_id)
+        # preload products
+        pids = list({r.get("product_id") for r in rows})
+        products = {p.id: p for p in Product.objects.filter(id__in=pids)}
+        from datetime import date as _date
+        today = _date.today()
+        counts = {"critical": 0, "warning": 0, "safe": 0}
+        at_risk_value = 0.0
+        for r in rows:
+            exp = r.get("expiry_date")
+            days_left = (exp - today).days if exp else None
+            status_txt = "Safe"
+            if days_left is not None:
+                if days_left <= crit_days:
+                    status_txt = "Critical"
+                elif days_left <= warn_days:
+                    status_txt = "Warning"
+            counts[status_txt.lower()] += 1
+            # stock value for critical+warning
+            if status_txt in ("Critical", "Warning"):
+                prod = products.get(r.get("product_id"))
+                try:
+                    price_per_base = float(prod.mrp) / float(prod.units_per_pack)
+                    at_risk_value += (float(r.get("stock_base") or 0) * price_per_base)
+                except Exception:
+                    pass
+        return Response({
+            "critical": counts["critical"],
+            "warning": counts["warning"],
+            "safe": counts["safe"],
+            "at_risk_value": round(at_risk_value, 2),
+        })
 
 
 class TopSellingView(viewsets.ViewSet):

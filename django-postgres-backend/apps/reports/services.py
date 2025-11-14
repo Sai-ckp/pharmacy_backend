@@ -6,6 +6,9 @@ from .models import ReportExport
 from apps.sales.models import SalesInvoice
 from apps.compliance.models import H1RegisterEntry, NDPSDailyEntry
 from apps.inventory.models import InventoryMovement
+from apps.settingsx.services import get_setting
+from apps.inventory.services import near_expiry
+from apps.catalog.models import Product
 
 
 EXPORT_DIR = os.path.join(settings.MEDIA_ROOT, "exports")
@@ -136,6 +139,45 @@ def generate_report_file(export: ReportExport):
                     move.batch_lot.batch_no,
                     move.reason,
                     move.qty_change_base,
+                ])
+
+        # ------------------------------
+        # EXPIRY STATUS REPORT
+        # ------------------------------
+        elif export.report_type == "EXPIRY_STATUS":
+            writer.writerow(["Medicine Name", "Batch Number", "Category", "Quantity", "Stock Value", "Expiry Date", "Days Left", "Status"])
+            warn_days = int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
+            rows = near_expiry(days=warn_days, location_id=(params.get("location") if params else None))
+            products = {p.id: p for p in Product.objects.filter(id__in=list({r.get("product_id") for r in rows}))}
+            from datetime import date as _date
+            crit_days = int(get_setting("ALERT_EXPIRY_CRITICAL_DAYS", "30") or 30)
+            today = _date.today()
+            for r in rows:
+                exp = r.get("expiry_date")
+                days_left = (exp - today).days if exp else None
+                status_txt = "Safe"
+                if days_left is not None:
+                    if days_left <= crit_days:
+                        status_txt = "Critical"
+                    elif days_left <= warn_days:
+                        status_txt = "Warning"
+                prod = products.get(r.get("product_id"))
+                stock_value = ""
+                if prod and prod.units_per_pack:
+                    try:
+                        price_per_base = float(prod.mrp) / float(prod.units_per_pack)
+                        stock_value = round(float(r.get("stock_base") or 0) * price_per_base, 2)
+                    except Exception:
+                        stock_value = ""
+                writer.writerow([
+                    getattr(prod, 'name', ''),
+                    r.get("batch_no"),
+                    getattr(getattr(prod, 'category', None), 'name', ''),
+                    r.get("stock_base"),
+                    stock_value,
+                    exp,
+                    days_left,
+                    status_txt,
                 ])
 
     export.file_path = f"/media/exports/{filename}"
