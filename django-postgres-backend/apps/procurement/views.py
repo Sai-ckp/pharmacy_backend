@@ -36,6 +36,94 @@ class VendorViewSet(viewsets.ModelViewSet):
     queryset = Vendor.objects.all()
     serializer_class = VendorSerializer
 
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Vendor summary: totals and counts",
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["get"], url_path="summary")
+    def summary(self, request, pk=None):
+        from django.db.models import Sum, Count
+        v = self.get_object()
+        pos = PurchaseOrder.objects.filter(vendor_id=v.id)
+        total_orders = pos.count()
+        total_amount = pos.aggregate(s=Sum("net_total")).get("s") or 0
+        # products supplied = distinct products in PO lines
+        prod_count = (
+            v
+            and PurchaseOrderLine.objects.filter(po__vendor_id=v.id)
+            .values("product_id")
+            .distinct()
+            .count()
+        )
+        return Response({
+            "vendor_id": v.id,
+            "total_orders": total_orders,
+            "total_amount": float(total_amount),
+            "products": prod_count,
+        })
+
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Vendor purchase orders list (compact)",
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["get"], url_path="purchase-orders")
+    def vendor_pos(self, request, pk=None):
+        v = self.get_object()
+        items = []
+        for po in PurchaseOrder.objects.filter(vendor_id=v.id).order_by("-order_date")[:100]:
+            item_cnt = sum(l.qty_packs_ordered or 0 for l in po.lines.all())
+            items.append({
+                "po_id": po.id,
+                "po_number": po.po_number,
+                "order_date": po.order_date,
+                "expected_date": po.expected_date,
+                "items": item_cnt,
+                "amount": float(po.net_total or 0),
+                "status": po.status,
+            })
+        return Response(items)
+
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Vendor supplied products with last price and last order date",
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["get"], url_path="products")
+    def vendor_products(self, request, pk=None):
+        v = self.get_object()
+        from .models import GoodsReceiptLine, GoodsReceipt
+        from django.db.models import Max
+        # Use GRN lines for accurate last price/date
+        grn_ids = GoodsReceipt.objects.filter(po__vendor_id=v.id, status=GoodsReceipt.Status.POSTED).values_list("id", flat=True)
+        qs = GoodsReceiptLine.objects.filter(grn_id__in=list(grn_ids)).select_related("product")
+        # Build last price and date per product
+        last_map = {}
+        for gl in qs.order_by("-grn__received_at"):
+            pid = gl.product_id
+            if pid not in last_map:
+                last_map[pid] = {
+                    "product_id": pid,
+                    "product_name": gl.product.name,
+                    "category": getattr(gl.product.category, "name", None),
+                    "last_price": float(gl.unit_cost or 0),
+                    "last_order_date": gl.grn.received_at,
+                }
+        # Fallback to PO lines if no GRN yet
+        if not last_map:
+            for pl in PurchaseOrderLine.objects.filter(po__vendor_id=v.id).select_related("product").order_by("-po__order_date"):
+                pid = pl.product_id
+                if pid not in last_map:
+                    last_map[pid] = {
+                        "product_id": pid,
+                        "product_name": pl.product.name,
+                        "category": getattr(pl.product.category, "name", None),
+                        "last_price": float(pl.expected_unit_cost or 0),
+                        "last_order_date": pl.po.order_date,
+                    }
+        return Response(list(last_map.values()))
+
 
 class PurchaseViewSet(viewsets.ModelViewSet):
     queryset = Purchase.objects.all().prefetch_related("lines")
