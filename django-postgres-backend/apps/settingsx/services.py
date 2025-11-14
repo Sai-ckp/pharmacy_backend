@@ -19,7 +19,22 @@ def set_setting(key: str, value: str) -> None:
 
 
 @transaction.atomic
-def next_doc_number(document_type: str, *, prefix: str = "", padding: int | None = None) -> str:
+def next_doc_number(document_type: str, *args, prefix: str = "", padding: int | None = None) -> str:
+    """Return and increment the next document number atomically.
+
+    Backward-compatible signature: some callers may pass positional
+    (prefix, padding). We accept those and map into keyword params.
+    """
+    # Back-compat: map optional positional args if provided
+    if args:
+        if len(args) >= 1 and not prefix:
+            prefix = args[0]
+        if len(args) >= 2 and padding is None:
+            try:
+                padding = int(args[1])
+            except Exception:
+                padding = None
+
     counter = DocCounter.objects.select_for_update().get(document_type=document_type)
     num = counter.next_number
     eff_prefix = prefix if prefix != "" else counter.prefix
