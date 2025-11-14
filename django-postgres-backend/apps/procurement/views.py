@@ -22,6 +22,8 @@ from apps.inventory.services import write_movement
 from .importers_pdf import parse_grn_pdf
 from apps.catalog.services_vendor_map import product_by_vendor_code
 from apps.governance.services import audit
+from django.db.models.functions import TruncMonth
+from django.db.models import Sum
 
 
 class HealthView(APIView):
@@ -185,4 +187,39 @@ class GrnImportCommitView(APIView):
             )
         audit(request.user if request.user.is_authenticated else None, table="procurement_goodsreceipt", row_id=grn.id, action="IMPORT_COMMIT", before=None, after={"lines": len(lines)})
         return Response({"id": grn.id, "status": grn.status}, status=status.HTTP_201_CREATED)
+
+
+class PurchasesMonthlyStatsView(APIView):
+    def get(self, request):
+        months = int(request.query_params.get("months", 6))
+        location_id = request.query_params.get("location_id")
+        from .models import GoodsReceiptLine, GoodsReceipt
+        qs = GoodsReceiptLine.objects.select_related("grn")
+        if location_id:
+            qs = qs.filter(grn__location_id=location_id)
+        qs = qs.filter(grn__status=GoodsReceipt.Status.POSTED)
+        data = (
+            qs.annotate(month=TruncMonth("grn__received_at"))
+            .values("month")
+            .annotate(total=Sum(Sum("qty_packs_received") * 0 + Sum("unit_cost")))
+        )
+        # Simpler: compute value as sum(qty_packs_received * unit_cost)
+        data = (
+            qs.annotate(month=TruncMonth("grn__received_at"))
+            .values("month")
+            .annotate(value=Sum(Sum("qty_packs_received") * 0))
+        )
+        # We'll compute value in Python to avoid DB-specific operations
+        from collections import defaultdict
+        bucket = defaultdict(lambda: 0)
+        for gl in qs.annotate(month=TruncMonth("grn__received_at")).values(
+            "month", "qty_packs_received", "unit_cost"
+        ):
+            if gl["month"] is None:
+                continue
+            key = gl["month"].strftime("%Y-%m")
+            bucket[key] += float(gl["qty_packs_received"] or 0) * float(gl["unit_cost"] or 0)
+        # Keep only latest N months sorted
+        series = [{"month": k, "total": round(v, 2)} for k, v in sorted(bucket.items())][-months:]
+        return Response(series)
 

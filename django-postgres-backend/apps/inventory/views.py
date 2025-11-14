@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from apps.catalog.models import BatchLot
-from .services import stock_on_hand, write_movement, low_stock, near_expiry
+from .services import stock_on_hand, write_movement, low_stock, near_expiry, inventory_stats
 from .models import RackLocation
 from .serializers import RackLocationSerializer
 from apps.settingsx.services import get_setting
@@ -89,6 +89,15 @@ class ExpiringView(APIView):
         elif window == "warning":
             days = int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
         data = near_expiry(days=days, location_id=request.query_params.get("location_id"))
+        return Response(data)
+
+
+class InventoryStatsView(APIView):
+    def get(self, request):
+        location_id = request.query_params.get("location_id")
+        if not location_id:
+            return Response({"detail": "location_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        data = inventory_stats(int(location_id))
         return Response(data)
 
 

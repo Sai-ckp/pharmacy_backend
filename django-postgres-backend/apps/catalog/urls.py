@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     HealthView, ProductCategoryViewSet, ProductViewSet, BatchLotViewSet, VendorViewSet,
-    MedicineFormViewSet, UomViewSet, VendorProductCodeViewSet,
+    MedicineFormViewSet, UomViewSet, VendorProductCodeViewSet, CatalogStatsView,
 )
 
 router = DefaultRouter()
@@ -16,6 +16,7 @@ router.register(r'vendor-codes', VendorProductCodeViewSet)
 
 urlpatterns = [
     path('', HealthView.as_view(), name='catalog-root'),
+    path('stats/', CatalogStatsView.as_view(), name='catalog-stats'),
     path('', include(router.urls)),
 ]
 

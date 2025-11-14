@@ -136,3 +136,12 @@ class VendorProductCodeViewSet(viewsets.ModelViewSet):
     filterset_fields = ["vendor", "product"]
     search_fields = ["vendor_code", "vendor_name_alias"]
 
+
+class CatalogStatsView(APIView):
+    def get(self, request):
+        from .models import ProductCategory, Product
+        return Response({
+            "total_products": Product.objects.filter(is_active=True).count(),
+            "total_categories": ProductCategory.objects.filter(is_active=True).count(),
+        })
+

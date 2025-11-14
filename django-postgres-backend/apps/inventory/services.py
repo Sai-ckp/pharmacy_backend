@@ -158,3 +158,31 @@ def low_stock(location_id):
             )
     return result
 
+
+def inventory_stats(location_id: int) -> dict:
+    from apps.catalog.models import Product
+    # Sum stock by product at location
+    agg = (
+        InventoryMovement.objects.filter(location_id=location_id)
+        .values("batch_lot__product_id")
+        .annotate(stock_base=Sum("qty_change_base"))
+    )
+    product_ids = [r["batch_lot__product_id"] for r in agg]
+    products = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+    try:
+        default_low = Decimal(get_setting("ALERT_LOW_STOCK_DEFAULT", "50") or "50")
+    except Exception:
+        default_low = Decimal("50")
+    counts = {"in_stock": 0, "low_stock": 0, "out_of_stock": 0}
+    for r in agg:
+        qty = r.get("stock_base") or Decimal("0")
+        p = products.get(r["batch_lot__product_id"])
+        threshold = p.reorder_level if p and p.reorder_level is not None else default_low
+        if qty <= 0:
+            counts["out_of_stock"] += 1
+        elif qty <= threshold:
+            counts["low_stock"] += 1
+        else:
+            counts["in_stock"] += 1
+    return counts
+
