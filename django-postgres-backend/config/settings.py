@@ -105,6 +105,10 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
+# Global date formats (DD-MM-YYYY)
+DATE_FORMAT = 'd-m-Y'
+DATETIME_FORMAT = 'd-m-Y H:i'
+
 # CORS and DRF (Dev A parity)
 CORS_ALLOW_ALL_ORIGINS = True
 
@@ -131,7 +135,18 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.JSONParser',
         'rest_framework.parsers.FormParser',
         'rest_framework.parsers.MultiPartParser',
-    ]
+    ],
+    # API date formats (DD-MM-YYYY)
+    'DATE_FORMAT': '%d-%m-%Y',
+    'DATETIME_FORMAT': '%d-%m-%Y %H:%M',
+    # Accept both new DD-MM-YYYY and old ISO inputs
+    'DATE_INPUT_FORMATS': ['%d-%m-%Y', '%Y-%m-%d'],
+    'DATETIME_INPUT_FORMATS': [
+        '%d-%m-%Y %H:%M',
+        '%Y-%m-%dT%H:%M:%S.%fZ',
+        '%Y-%m-%dT%H:%M:%S%z',
+        '%Y-%m-%d %H:%M:%S',
+    ],
 }
 
 SPECTACULAR_SETTINGS = {

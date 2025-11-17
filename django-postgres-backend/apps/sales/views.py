@@ -216,7 +216,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         <style>body{{font-family:Arial,Helvetica,sans-serif}} table{{border-collapse:collapse;width:100%}} td,th{{border:1px solid #ddd;padding:8px}}</style>
         </head><body>
         <h2>Invoice #{inv.invoice_no or inv.id}</h2>
-        <p>Date: {inv.invoice_date.strftime('%Y-%m-%d %H:%M')}</p>
+        <p>Date: {inv.invoice_date.strftime('%d-%m-%Y %H:%M')}</p>
         <h3>{company['name']}</h3>
         <p>{company['address']}<br/>Phone: {company['phone']} Email: {company['email']}<br/>GST: {company['gst']}</p>
         <h4>Bill To: {getattr(inv.customer,'name','-')}</h4>
