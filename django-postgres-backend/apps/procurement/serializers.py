@@ -81,7 +81,31 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
         for line in lines:
             product = Product.objects.get(id=line["product"].id if hasattr(line.get("product"), "id") else line["product"])
             qty = Decimal(line.get("qty_packs_ordered") or 0)
-            cost = Decimal(line.get("expected_unit_cost") or 0)
+            # if frontend didn't send unit cost (UI hides price field), derive sensible default
+            raw_cost = line.get("expected_unit_cost")
+            if raw_cost in (None, "", 0, "0"):
+                from .models import GoodsReceiptLine, GoodsReceipt
+                vendor = validated_data.get("vendor")
+                cost = None
+                if vendor is not None:
+                    # latest GRN for this vendor+product
+                    gl = (
+                        GoodsReceiptLine.objects.filter(
+                            grn__po__vendor=vendor,
+                            grn__status=GoodsReceipt.Status.POSTED,
+                            product_id=product.id,
+                        )
+                        .order_by("-grn__received_at")
+                        .first()
+                    )
+                    if gl:
+                        cost = gl.unit_cost
+                # fallback to product.mrp
+                if cost is None:
+                    cost = product.mrp
+                line["expected_unit_cost"] = cost
+            else:
+                cost = Decimal(raw_cost)
             gst_override = line.get("gst_percent_override")
             parts = compute_po_line_totals(
                 qty_packs=qty,
@@ -116,7 +140,28 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             for line in lines:
                 product = Product.objects.get(id=line["product"].id if hasattr(line.get("product"), "id") else line["product"])
                 qty = Decimal(line.get("qty_packs_ordered") or 0)
-                cost = Decimal(line.get("expected_unit_cost") or 0)
+                raw_cost = line.get("expected_unit_cost")
+                if raw_cost in (None, "", 0, "0"):
+                    from .models import GoodsReceiptLine, GoodsReceipt
+                    vendor = instance.vendor
+                    cost = None
+                    if vendor is not None:
+                        gl = (
+                            GoodsReceiptLine.objects.filter(
+                                grn__po__vendor=vendor,
+                                grn__status=GoodsReceipt.Status.POSTED,
+                                product_id=product.id,
+                            )
+                            .order_by("-grn__received_at")
+                            .first()
+                        )
+                        if gl:
+                            cost = gl.unit_cost
+                    if cost is None:
+                        cost = product.mrp
+                    line["expected_unit_cost"] = cost
+                else:
+                    cost = Decimal(raw_cost)
                 gst_override = line.get("gst_percent_override")
                 parts = compute_po_line_totals(
                     qty_packs=qty,
