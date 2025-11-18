@@ -52,5 +52,59 @@
       "received_at": "2025-11-07T09:15:00Z",
       "received_by": 1
     }
+  },
+  {
+    "model": "sales.salesinvoice",
+    "pk": 2,
+    "fields": {
+      "invoice_no": "INV-0002",
+      "location": 1,
+      "customer": 3,
+      "created_by": 1,
+      "invoice_date": "2025-11-07T10:05:00Z",
+      "place_of_supply": "KA",
+      "buyer_gstin": "",
+      "gross_total": "30.0000",
+      "discount_total": "0.0000",
+      "tax_total": "3.6000",
+      "round_off_amount": "0.0000",
+      "net_total": "33.6000",
+      "status": "POSTED",
+      "posted_at": "2025-11-07T10:10:00Z",
+      "posted_by": 1,
+      "payment_status": "PAID",
+      "disclaimers": "Sample demo invoice.",
+      "created_at": "2025-11-07T10:05:00Z",
+      "updated_at": "2025-11-07T10:05:00Z"
+    }
+  },
+  {
+    "model": "sales.salesline",
+    "pk": 2,
+    "fields": {
+      "sale_invoice": 2,
+      "product": 4,
+      "batch_lot": 4,
+      "qty_base": "10.0000",
+      "sold_uom": "BASE",
+      "rate_per_base": "3.0000",
+      "discount_amount": "0.0000",
+      "tax_percent": "12.0000",
+      "tax_amount": "3.6000",
+      "line_total": "33.6000",
+      "requires_prescription": false
+    }
+  },
+  {
+    "model": "sales.salespayment",
+    "pk": 2,
+    "fields": {
+      "sale_invoice": 2,
+      "amount": "33.6000",
+      "mode": "CASH",
+      "txn_ref": "TXN-DEMO-1",
+      "received_at": "2025-11-07T10:15:00Z",
+      "received_by": 1
+    }
   }
 ]

@@ -1,0 +1,31 @@
+[
+  {
+    "model": "governance.retentionpolicy",
+    "pk": 1,
+    "fields": {
+      "module": "AUDIT",
+      "keep_years": 1,
+      "hold_from_purge": false
+    }
+  },
+  {
+    "model": "governance.retentionpolicy",
+    "pk": 2,
+    "fields": {
+      "module": "SYSTEM_EVENT",
+      "keep_years": 1,
+      "hold_from_purge": false
+    }
+  },
+  {
+    "model": "governance.systemevent",
+    "pk": 1,
+    "fields": {
+      "code": "SEED_INIT",
+      "payload": {
+        "message": "Initial data seeded"
+      },
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  }
+]

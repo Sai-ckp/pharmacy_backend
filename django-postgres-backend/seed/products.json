@@ -79,5 +79,32 @@
       "is_sensitive": true,
       "is_active": true
     }
+  },
+  {
+    "model": "catalog.product",
+    "pk": 4,
+    "fields": {
+      "category": 1,
+      "code": "PARA-500",
+      "name": "Paracetamol 500mg",
+      "generic_name": "Paracetamol",
+      "dosage_strength": "500mg",
+      "hsn": "3004",
+      "schedule": "OTC",
+      "pack_size": "10 tablets per strip",
+      "manufacturer": "Acme Labs",
+      "mrp": "30.00",
+      "base_unit": "tablet",
+      "pack_unit": "strip",
+      "units_per_pack": 10,
+      "base_unit_step": "1.000",
+      "gst_percent": "12.00",
+      "reorder_level": 20,
+      "description": "Sample analgesic for billing demo",
+      "storage_instructions": "Store below 25C",
+      "preferred_vendor": 1,
+      "is_sensitive": false,
+      "is_active": true
+    }
   }
 ]

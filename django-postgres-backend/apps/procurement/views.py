@@ -78,8 +78,8 @@ class VendorViewSet(viewsets.ModelViewSet):
             items.append({
                 "po_id": po.id,
                 "po_number": po.po_number,
-                "order_date": po.order_date,
-                "expected_date": po.expected_date,
+                "order_date": po.order_date.strftime("%d-%m-%Y") if po.order_date else None,
+                "expected_date": po.expected_date.strftime("%d-%m-%Y") if po.expected_date else None,
                 "items": item_cnt,
                 "amount": float(po.net_total or 0),
                 "status": po.status,

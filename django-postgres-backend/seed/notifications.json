@@ -1,0 +1,19 @@
+[
+  {
+    "model": "notifications.notification",
+    "pk": 1,
+    "fields": {
+      "channel": "EMAIL",
+      "to": "alerts@demopharmacy.com",
+      "subject": "Low stock alert demo",
+      "message": "This is a demo notification seeded with initial data.",
+      "payload": {
+        "type": "LOW_STOCK_DEMO"
+      },
+      "status": "QUEUED",
+      "error": null,
+      "created_at": "2025-11-07T08:00:00Z",
+      "sent_at": null
+    }
+  }
+]
