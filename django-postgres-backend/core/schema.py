@@ -3,7 +3,6 @@ import re
 
 from drf_spectacular.generators import SchemaGenerator as BaseSchemaGenerator, AutoSchema
 from drf_spectacular.plumbing import (
-    add_trace_message,
     camelize_operation,
     error,
     get_override,
@@ -71,10 +70,9 @@ class CustomSchemaGenerator(BaseSchemaGenerator):
                 )
                 continue
 
-            with add_trace_message(getattr(view, "__class__", view)):
-                operation = view.schema.get_operation(
-                    path, path_regex, path_prefix, method, self.registry
-                )
+            operation = view.schema.get_operation(
+                path, path_regex, path_prefix, method, self.registry
+            )
 
             if not operation:
                 continue
@@ -95,4 +93,3 @@ class CustomSchemaGenerator(BaseSchemaGenerator):
             result[path][method.lower()] = operation
 
         return result
-
