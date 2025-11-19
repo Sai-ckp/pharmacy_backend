@@ -153,4 +153,5 @@ SPECTACULAR_SETTINGS = {
     'TITLE': 'Pharmacy ERP API',
     'VERSION': 'v1',
     'SERVE_INCLUDE_SCHEMA': False,
+    'DEFAULT_GENERATOR_CLASS': 'core.schema.CustomSchemaGenerator',
 }
