@@ -1,6 +1,7 @@
+from rest_framework import generics, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import generics, status
+
 from .permissions import IsAdmin
 from .models import AuditLog
 from . import services
@@ -11,8 +12,17 @@ class HealthView(APIView):
         return Response({"ok": True})
 
 
+class AuditLogListSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    actor_user_id = serializers.IntegerField(allow_null=True)
+    action = serializers.CharField()
+    table_name = serializers.CharField()
+    record_id = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
+
 class AuditLogListView(generics.ListAPIView):
-    serializer_class = None  # We can emit minimal dicts
+    serializer_class = AuditLogListSerializer
 
     def get_queryset(self):
         return AuditLog.objects.all()
