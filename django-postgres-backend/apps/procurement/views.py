@@ -207,6 +207,53 @@ class PurchaseOrderViewSet(viewsets.ModelViewSet):
                 actor = AccountsUser.objects.filter(email=email).first()
         serializer.save(po_number=po_number, created_by=actor)
 
+    @extend_schema(
+        tags=["Procurement"],
+        summary="Get full purchase order details including product info",
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["get"], url_path="detail")
+    def detail(self, request, pk=None):
+        po = self.get_object()
+        lines_payload = []
+        for ln in po.lines.select_related("product").all():
+            prod = ln.product
+            lines_payload.append(
+                {
+                    "id": ln.id,
+                    "product_id": prod.id if prod else None,
+                    "product_code": getattr(prod, "code", None),
+                    "product_name": getattr(prod, "name", None),
+                    "manufacturer": getattr(prod, "manufacturer", None),
+                    "pack_size": getattr(prod, "pack_size", None),
+                    "qty_packs_ordered": ln.qty_packs_ordered,
+                    "expected_unit_cost": str(ln.expected_unit_cost),
+                    "gst_percent_override": (
+                        str(ln.gst_percent_override)
+                        if ln.gst_percent_override is not None
+                        else None
+                    ),
+                }
+            )
+        payload = {
+            "id": po.id,
+            "po_number": po.po_number,
+            "status": po.status,
+            "vendor": {
+                "id": po.vendor_id,
+                "name": po.vendor.name if po.vendor_id else None,
+            },
+            "location_id": po.location_id,
+            "order_date": po.order_date.strftime("%d-%m-%Y") if po.order_date else None,
+            "expected_date": po.expected_date.strftime("%d-%m-%Y") if po.expected_date else None,
+            "note": po.note,
+            "gross_total": str(po.gross_total),
+            "tax_total": str(po.tax_total),
+            "net_total": str(po.net_total),
+            "lines": lines_payload,
+        }
+        return Response(payload)
+
     @action(detail=True, methods=["get", "post"], url_path="lines")
     def po_lines(self, request, pk=None):
         from .serializers import PurchaseOrderLineSerializer
