@@ -86,6 +86,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "posted_by",
             "created_at",
             "updated_at",
+            "created_by",
             "invoice_no",  # auto-generated
         )
 

@@ -2,16 +2,34 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import status, permissions, viewsets
 from drf_spectacular.utils import extend_schema, OpenApiTypes, OpenApiParameter, OpenApiExample
-from django.db.models import Q
-from datetime import date
+from django.db.models import Q, Sum, F
+from datetime import date, datetime
 from decimal import Decimal
 
-from apps.catalog.models import BatchLot
+from apps.catalog.models import BatchLot, ProductCategory
 from .services import stock_on_hand, write_movement, low_stock, near_expiry, inventory_stats, stock_summary
-from .models import RackLocation
+from .models import RackLocation, InventoryMovement
 from .serializers import RackLocationSerializer
 from apps.settingsx.services import get_setting
 from django.db import transaction
+
+
+def _parse_date(value):
+    """
+    Accepts either a date, or a string in DD-MM-YYYY or YYYY-MM-DD,
+    returns a date object or None. Raises ValueError on invalid strings.
+    """
+    if value in (None, ""):
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        for fmt in ("%d-%m-%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(value, fmt).date()
+            except ValueError:
+                continue
+    raise ValueError(f"Invalid date format: {value!r}")
 
 
 class HealthView(APIView):
@@ -274,21 +292,27 @@ class AddMedicineView(APIView):
         # Create or upsert batch
         if not batch_data.get("batch_no"):
             return Response({"detail": "batch.batch_no is required"}, status=status.HTTP_400_BAD_REQUEST)
+        # Parse dates safely (support DD-MM-YYYY and YYYY-MM-DD)
+        try:
+            mfg_parsed = _parse_date(batch_data.get("mfg_date"))
+            expiry_parsed = _parse_date(batch_data.get("expiry_date"))
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         batch, _ = BatchLot.objects.get_or_create(
             product=product,
             batch_no=batch_data.get("batch_no"),
             defaults={
-                "mfg_date": batch_data.get("mfg_date"),
-                "expiry_date": batch_data.get("expiry_date"),
+                "mfg_date": mfg_parsed,
+                "expiry_date": expiry_parsed,
                 "status": BatchLot.Status.ACTIVE,
             },
         )
         # Fill missing attributes if provided
         changed = False
-        if batch_data.get("mfg_date") and not batch.mfg_date:
-            batch.mfg_date = batch_data.get("mfg_date"); changed = True
-        if batch_data.get("expiry_date") and not batch.expiry_date:
-            batch.expiry_date = batch_data.get("expiry_date"); changed = True
+        if mfg_parsed and not batch.mfg_date:
+            batch.mfg_date = mfg_parsed; changed = True
+        if expiry_parsed and not batch.expiry_date:
+            batch.expiry_date = expiry_parsed; changed = True
         if batch_data.get("rack_no") and not batch.rack_no:
             batch.rack_no = batch_data.get("rack_no"); changed = True
         if changed:
@@ -345,6 +369,92 @@ class AddMedicineView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class MedicinesListView(APIView):
+    """
+    Aggregate view used by the UI to show current medicines/stock per batch at a location.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        tags=["Inventory"],
+        summary="List medicines (per batch) with current stock at a location",
+        parameters=[
+            OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("q", OpenApiTypes.STR, OpenApiParameter.QUERY, description="Search by code/name"),
+        ],
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+    )
+    def get(self, request):
+        location_id = request.query_params.get("location_id")
+        if not location_id:
+            return Response(
+                {"detail": "location_id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            location_id = int(location_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "location_id must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        q = request.query_params.get("q") or ""
+
+        base_qs = (
+            InventoryMovement.objects.filter(location_id=location_id)
+            .values(
+                "batch_lot_id",
+                "batch_lot__batch_no",
+                "batch_lot__expiry_date",
+                "batch_lot__product_id",
+                "batch_lot__product__code",
+                "batch_lot__product__name",
+                "batch_lot__product__manufacturer",
+                "batch_lot__product__category_id",
+                "batch_lot__product__mrp",
+            )
+            .annotate(quantity=Sum("qty_change_base"))
+        )
+
+        if q:
+            q_lower = q.lower()
+            base_qs = [
+                r
+                for r in base_qs
+                if q_lower in (r.get("batch_lot__product__name") or "").lower()
+                or q_lower in (r.get("batch_lot__product__code") or "").lower()
+                or q_lower in (r.get("batch_lot__batch_no") or "").lower()
+            ]
+
+        cat_ids = {r["batch_lot__product__category_id"] for r in base_qs if r.get("batch_lot__product__category_id")}
+        cat_map = {
+            c.id: c.name for c in ProductCategory.objects.filter(id__in=cat_ids)
+        } if cat_ids else {}
+
+        out = []
+        for r in base_qs:
+            qty = r.get("quantity") or Decimal("0")
+            # include zero and negative as Out of Stock rows so UI can still show them
+            out.append(
+                {
+                    "id": r["batch_lot_id"],
+                    "medicine_id": r.get("batch_lot__product__code") or "",
+                    "batch_number": r.get("batch_lot__batch_no") or "",
+                    "medicine_name": r.get("batch_lot__product__name") or "",
+                    "category": cat_map.get(r.get("batch_lot__product__category_id")) or "",
+                    "manufacturer": r.get("batch_lot__product__manufacturer") or "",
+                    "quantity": float(qty),
+                    "mrp": float(r.get("batch_lot__product__mrp") or 0),
+                    "expiry_date": r.get("batch_lot__expiry_date"),
+                }
+            )
+
+        return Response(out)
 
 
 class RackLocationViewSet(viewsets.ModelViewSet):
