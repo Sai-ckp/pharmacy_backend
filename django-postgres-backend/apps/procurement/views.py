@@ -305,40 +305,86 @@ class PoImportCommitView(APIView):
     )
     @transaction.atomic
     def post(self, request):
-        vendor_id = request.data.get("vendor_id") or request.data.get("vendor")
+        # Global vendor and location from payload
+        global_vendor_id = request.data.get("vendor_id") or request.data.get("vendor")
         location_id = request.data.get("location_id") or request.data.get("location")
         lines = request.data.get("lines") or []
-        if not vendor_id or not location_id or not isinstance(lines, list) or not lines:
-            return Response({"detail": "vendor_id, location_id and lines required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not location_id or not isinstance(lines, list) or not lines:
+            return Response({"detail": "location_id and lines required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        po_payload = {
-            "vendor": vendor_id,
-            "location": location_id,
-            "order_date": request.data.get("order_date"),
-            "expected_date": request.data.get("expected_date"),
-            "note": request.data.get("note", ""),
-            "lines": [],
-        }
+        # Allow either a single global vendor_id, or vendor per line.
+        # Group lines by their effective vendor so that separate vendors
+        # always receive separate POs instead of overriding each other.
+        from collections import defaultdict
+
+        vendor_lines = defaultdict(list)
         for ln in lines:
-            product_id = ln.get("product_id")
-            if not product_id:
-                vend_code = ln.get("vendor_code") or ln.get("product_code") or ""
-                prod = product_by_vendor_code(int(vendor_id), vend_code)
-                if not prod:
-                    return Response({"detail": f"Unable to resolve product for code '{vend_code}'"}, status=status.HTTP_400_BAD_REQUEST)
-                product_id = prod.id
-            po_payload["lines"].append({
-                "product": product_id,
-                "qty_packs_ordered": ln.get("qty") or ln.get("qty_packs") or ln.get("qty_packs_ordered") or 0,
-                "expected_unit_cost": ln.get("unit_cost") or ln.get("price") or ln.get("expected_unit_cost") or "0.00",
-                "gst_percent_override": ln.get("gst_percent") or ln.get("gst_percent_override"),
-            })
+            ln_vendor_id = ln.get("vendor_id") or ln.get("vendor") or global_vendor_id
+            if not ln_vendor_id:
+                return Response(
+                    {"detail": "vendor_id is required either globally or per line."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                vid_int = int(ln_vendor_id)
+            except (TypeError, ValueError):
+                return Response({"detail": f"Invalid vendor id: {ln_vendor_id!r}"}, status=status.HTTP_400_BAD_REQUEST)
+            vendor_lines[vid_int].append(ln)
 
-        ser = PurchaseOrderSerializer(data=po_payload)
-        ser.is_valid(raise_exception=True)
-        po = ser.save()
-        audit(request.user if request.user.is_authenticated else None, table="procurement_purchaseorder", row_id=po.id, action="IMPORT_COMMIT", before=None, after={"lines": len(po_payload["lines"])})
-        return Response(ser.data, status=status.HTTP_201_CREATED)
+        po_results = []
+        actor = request.user if request.user.is_authenticated else None
+
+        for vendor_id, v_lines in vendor_lines.items():
+            po_payload = {
+                "vendor": vendor_id,
+                "location": location_id,
+                "order_date": request.data.get("order_date"),
+                "expected_date": request.data.get("expected_date"),
+                "note": request.data.get("note", ""),
+                "lines": [],
+            }
+            for ln in v_lines:
+                product_id = ln.get("product_id")
+                if not product_id:
+                    vend_code = ln.get("vendor_code") or ln.get("product_code") or ""
+                    prod = product_by_vendor_code(int(vendor_id), vend_code)
+                    if not prod:
+                        msg = f"Unable to resolve product for code '{vend_code}' for vendor {vendor_id}"
+                        return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
+                    product_id = prod.id
+                po_payload["lines"].append(
+                    {
+                        "product": product_id,
+                        "qty_packs_ordered": ln.get("qty") or ln.get("qty_packs") or ln.get("qty_packs_ordered") or 0,
+                        "expected_unit_cost": ln.get("unit_cost") or ln.get("price") or ln.get("expected_unit_cost") or "0.00",
+                        "gst_percent_override": ln.get("gst_percent") or ln.get("gst_percent_override"),
+                    }
+                )
+
+            ser = PurchaseOrderSerializer(data=po_payload)
+            ser.is_valid(raise_exception=True)
+            po = ser.save()
+            audit(
+                actor,
+                table="procurement_purchaseorder",
+                row_id=po.id,
+                action="IMPORT_COMMIT",
+                before=None,
+                after={"lines": len(po_payload["lines"])},
+            )
+            po_results.append(ser.data)
+
+        # Backwards compatible response shape: if only one vendor,
+        # return that PO as before; if multiple vendors, still return
+        # the first PO but include IDs of additional POs for reference.
+        if len(po_results) == 1:
+            return Response(po_results[0], status=status.HTTP_201_CREATED)
+
+        primary = po_results[0] if isinstance(po_results[0], dict) else {"primary": po_results[0]}
+        extra_ids = [po_data.get("id") for po_data in po_results[1:] if isinstance(po_data, dict)]
+        primary["extra_po_ids"] = extra_ids
+        primary["extra_pos_count"] = len(extra_ids)
+        return Response(primary, status=status.HTTP_201_CREATED)
 
 
 class GrnImportCommitView(APIView):

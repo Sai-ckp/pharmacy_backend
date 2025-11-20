@@ -54,6 +54,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
+    customer_billing_address = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_city = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_state_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_pincode = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -99,7 +100,6 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         if not customer:
             name = self.initial_data.get("customer_name") if self.initial_data else None
             phone = self.initial_data.get("customer_phone") if self.initial_data else None
-            email = self.initial_data.get("customer_email") if self.initial_data else None
             city = self.initial_data.get("customer_city") if self.initial_data else None
             if not name or not phone or not city:
                 raise serializers.ValidationError(
@@ -156,6 +156,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         name = validated_data.pop("customer_name", None)
         phone = validated_data.pop("customer_phone", None)
         email = validated_data.pop("customer_email", None)
+        billing_address = validated_data.pop("customer_billing_address", None)
         city = validated_data.pop("customer_city", None)
         state_code = validated_data.pop("customer_state_code", None)
         pincode = validated_data.pop("customer_pincode", None)
@@ -181,6 +182,8 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             code=code,
             phone=phone or None,
             email=email or None,
+            billing_address=billing_address or None,
+            shipping_address=billing_address or None,
             city=city or None,
             state_code=state_code or None,
             pincode=pincode or None,
@@ -219,6 +222,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         validated_data.pop("customer_name", None)
         validated_data.pop("customer_phone", None)
         validated_data.pop("customer_email", None)
+        validated_data.pop("customer_billing_address", None)
         validated_data.pop("customer_city", None)
         validated_data.pop("customer_state_code", None)
         validated_data.pop("customer_pincode", None)
