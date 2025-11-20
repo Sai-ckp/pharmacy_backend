@@ -37,5 +37,18 @@
       "recall_reason": "",
       "rack_no": "C2"
     }
+  },
+  {
+    "model": "catalog.batchlot",
+    "pk": 4,
+    "fields": {
+      "product": 4,
+      "batch_no": "PARA500-DEMO",
+      "mfg_date": "2025-10-01",
+      "expiry_date": "2026-10-01",
+      "status": "ACTIVE",
+      "recall_reason": "",
+      "rack_no": "A1"
+    }
   }
 ]

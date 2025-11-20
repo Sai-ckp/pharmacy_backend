@@ -46,7 +46,18 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
     # Nested serializers
     lines = SalesLineSerializer(many=True)
     payments = SalesPaymentSerializer(many=True, read_only=True)
-    customer = serializers.PrimaryKeyRelatedField(queryset=Customer.objects.all())
+    # Existing customer (by id)
+    customer = serializers.PrimaryKeyRelatedField(
+        queryset=Customer.objects.all(), required=False, allow_null=True
+    )
+    # Optional inline customer fields for new customers created from bill screen
+    customer_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    customer_phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    customer_email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
+    customer_billing_address = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    customer_city = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    customer_state_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    customer_pincode = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     # Computed / read-only fields
     total_paid = serializers.DecimalField(
@@ -76,6 +87,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             "posted_by",
             "created_at",
             "updated_at",
+            "created_by",
             "invoice_no",  # auto-generated
         )
 
@@ -83,6 +95,17 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         lines = data.get("lines") or []
         if not lines:
             raise serializers.ValidationError("Invoice must have at least one line item.")
+        # Ensure we have either an existing customer or enough data to create one
+        customer = data.get("customer")
+        if not customer:
+            name = self.initial_data.get("customer_name") if self.initial_data else None
+            phone = self.initial_data.get("customer_phone") if self.initial_data else None
+            city = self.initial_data.get("customer_city") if self.initial_data else None
+            if not name or not phone or not city:
+                raise serializers.ValidationError(
+                    "Either an existing customer must be provided or customer_name, "
+                    "customer_phone and customer_city must be sent."
+                )
         return data
 
     def _compute_totals_and_create_lines(self, invoice, lines):
@@ -125,8 +148,55 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             round_off,
         )
 
+    def _get_or_create_customer_from_inline(self, validated_data):
+        customer = validated_data.get("customer")
+        if customer:
+            return customer
+        # Pop inline fields (they are not model fields)
+        name = validated_data.pop("customer_name", None)
+        phone = validated_data.pop("customer_phone", None)
+        email = validated_data.pop("customer_email", None)
+        billing_address = validated_data.pop("customer_billing_address", None)
+        city = validated_data.pop("customer_city", None)
+        state_code = validated_data.pop("customer_state_code", None)
+        pincode = validated_data.pop("customer_pincode", None)
+        if not name and not phone and not city:
+            # Nothing to do; leave customer as None (caller validation already enforced requirements)
+            return None
+        # If phone matches an existing customer, reuse it
+        existing = None
+        if phone:
+            existing = Customer.objects.filter(phone=phone).first()
+        if existing:
+            return existing
+        # Generate a simple unique customer code
+        last_id = Customer.objects.order_by("-id").values_list("id", flat=True).first() or 0
+        base = last_id + 1
+        code = f"CUST-{base:05d}"
+        # Ensure uniqueness in case of gaps
+        while Customer.objects.filter(code=code).exists():
+            base += 1
+            code = f"CUST-{base:05d}"
+        return Customer.objects.create(
+            name=name or "Walk-in Customer",
+            code=code,
+            phone=phone or None,
+            email=email or None,
+            billing_address=billing_address or None,
+            shipping_address=billing_address or None,
+            city=city or None,
+            state_code=state_code or None,
+            pincode=pincode or None,
+            type=Customer.Type.RETAIL,
+            is_active=True,
+        )
+
     def create(self, validated_data):
         lines = validated_data.pop("lines", [])
+        # Attach or create customer if needed
+        customer = self._get_or_create_customer_from_inline(validated_data)
+        if customer is not None:
+            validated_data["customer"] = customer
         invoice = SalesInvoice.objects.create(**validated_data)
 
         gross, disc, tax, net, round_off = self._compute_totals_and_create_lines(
@@ -148,6 +218,14 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Only DRAFT invoices can be edited.")
 
         lines = validated_data.pop("lines", None)
+        # For updates we do not auto-create customers; ignore inline fields if sent
+        validated_data.pop("customer_name", None)
+        validated_data.pop("customer_phone", None)
+        validated_data.pop("customer_email", None)
+        validated_data.pop("customer_billing_address", None)
+        validated_data.pop("customer_city", None)
+        validated_data.pop("customer_state_code", None)
+        validated_data.pop("customer_pincode", None)
 
         for key, value in validated_data.items():
             setattr(instance, key, value)

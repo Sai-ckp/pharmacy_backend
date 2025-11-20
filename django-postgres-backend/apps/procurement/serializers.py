@@ -58,6 +58,10 @@ class PurchaseOrderLineSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseOrderLine
         fields = "__all__"
+        extra_kwargs = {
+            "po": {"required": False},
+            "expected_unit_cost": {"required": False},
+        }
 
 
 class PurchaseOrderSerializer(serializers.ModelSerializer):
@@ -66,6 +70,12 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = PurchaseOrder
         fields = "__all__"
+        extra_kwargs = {
+            "po_number": {"read_only": True},
+            "gross_total": {"read_only": True},
+            "tax_total": {"read_only": True},
+            "net_total": {"read_only": True},
+        }
 
     @transaction.atomic
     def create(self, validated_data):

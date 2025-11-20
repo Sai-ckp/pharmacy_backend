@@ -1,0 +1,239 @@
+[
+  {
+    "model": "settingsx.settingkv",
+    "pk": "ALERT_LOW_STOCK_DEFAULT",
+    "fields": {
+      "value": "50",
+      "description": "Default low stock threshold",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.settingkv",
+    "pk": "ALERT_EXPIRY_WARNING_DAYS",
+    "fields": {
+      "value": "60",
+      "description": "Days before expiry for WARNING",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.settingkv",
+    "pk": "ALERT_EXPIRY_CRITICAL_DAYS",
+    "fields": {
+      "value": "30",
+      "description": "Days before expiry for CRITICAL",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.settingkv",
+    "pk": "ALLOW_NEGATIVE_STOCK",
+    "fields": {
+      "value": "false",
+      "description": "Whether inventory can go negative",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.settingkv",
+    "pk": "ALLOW_RESTORE",
+    "fields": {
+      "value": "false",
+      "description": "Guard flag for backup restore",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.settingkv",
+    "pk": "TAX_GST_RATE",
+    "fields": {
+      "value": "12.00",
+      "description": "Default GST percent",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.settingkv",
+    "pk": "INVOICE_PREFIX",
+    "fields": {
+      "value": "INV-",
+      "description": "Invoice document prefix",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.settingkv",
+    "pk": "INVOICE_START",
+    "fields": {
+      "value": "1",
+      "description": "Starting invoice number",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.businessprofile",
+    "pk": 1,
+    "fields": {
+      "business_name": "Demo Pharmacy",
+      "email": "info@demopharmacy.com",
+      "phone": "9000000000",
+      "address": "1 Demo Street, Bangalore",
+      "owner_name": "Owner Name",
+      "registration_date": "2025-01-01",
+      "gst_number": "29AAAAA0000A1Z5",
+      "pharmacy_license_number": "PHA-1234",
+      "drug_license_number": "DRUG-5678",
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.doccounter",
+    "pk": 1,
+    "fields": {
+      "document_type": "PO",
+      "prefix": "PO-",
+      "next_number": 1,
+      "padding_int": 5,
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.doccounter",
+    "pk": 2,
+    "fields": {
+      "document_type": "GRN",
+      "prefix": "GRN-",
+      "next_number": 1,
+      "padding_int": 5,
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.doccounter",
+    "pk": 3,
+    "fields": {
+      "document_type": "TRANSFER",
+      "prefix": "TR-",
+      "next_number": 1,
+      "padding_int": 5,
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.doccounter",
+    "pk": 4,
+    "fields": {
+      "document_type": "INVOICE",
+      "prefix": "INV-",
+      "next_number": 2,
+      "padding_int": 5,
+      "updated_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentmethod",
+    "pk": 1,
+    "fields": {
+      "name": "Cash",
+      "description": "Cash payments",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentmethod",
+    "pk": 2,
+    "fields": {
+      "name": "Card",
+      "description": "Card payments",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentmethod",
+    "pk": 3,
+    "fields": {
+      "name": "UPI",
+      "description": "UPI payments",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentmethod",
+    "pk": 4,
+    "fields": {
+      "name": "Credit",
+      "description": "Customer credit",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentmethod",
+    "pk": 5,
+    "fields": {
+      "name": "Insurance",
+      "description": "Insurance claims",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentterm",
+    "pk": 1,
+    "fields": {
+      "name": "Immediate",
+      "days": 0,
+      "description": "Pay at time of billing",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentterm",
+    "pk": 2,
+    "fields": {
+      "name": "Net 15",
+      "days": 15,
+      "description": "Due in 15 days",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentterm",
+    "pk": 3,
+    "fields": {
+      "name": "Net 30",
+      "days": 30,
+      "description": "Due in 30 days",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentterm",
+    "pk": 4,
+    "fields": {
+      "name": "Net 45",
+      "days": 45,
+      "description": "Due in 45 days",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "settingsx.paymentterm",
+    "pk": 5,
+    "fields": {
+      "name": "Net 60",
+      "days": 60,
+      "description": "Due in 60 days",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  }
+]

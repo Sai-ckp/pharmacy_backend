@@ -1,0 +1,72 @@
+[
+  {
+    "model": "inventory.racklocation",
+    "pk": 1,
+    "fields": {
+      "name": "A1",
+      "description": "Front rack A1",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "inventory.racklocation",
+    "pk": 2,
+    "fields": {
+      "name": "A2",
+      "description": "Front rack A2",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "inventory.racklocation",
+    "pk": 3,
+    "fields": {
+      "name": "B1",
+      "description": "Middle rack B1",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "inventory.racklocation",
+    "pk": 4,
+    "fields": {
+      "name": "B2",
+      "description": "Middle rack B2",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "inventory.racklocation",
+    "pk": 5,
+    "fields": {
+      "name": "C1",
+      "description": "Back rack C1",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "inventory.rackrule",
+    "pk": 1,
+    "fields": {
+      "location": 1,
+      "manufacturer_name": "Acme Labs",
+      "rack_code": "A1",
+      "is_active": true
+    }
+  },
+  {
+    "model": "inventory.rackrule",
+    "pk": 2,
+    "fields": {
+      "location": 1,
+      "manufacturer_name": "Zen Heal Labs",
+      "rack_code": "B1",
+      "is_active": true
+    }
+  }
+]

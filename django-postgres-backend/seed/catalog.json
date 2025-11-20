@@ -118,5 +118,153 @@
       "recall_reason": "",
       "created_at": "2025-11-07T09:00:00Z"
     }
+  },
+  {
+    "model": "catalog.medicineform",
+    "pk": 1,
+    "fields": {
+      "name": "Tablet",
+      "description": "Solid dose form",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.medicineform",
+    "pk": 2,
+    "fields": {
+      "name": "Capsule",
+      "description": "Capsule form",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.medicineform",
+    "pk": 3,
+    "fields": {
+      "name": "Syrup",
+      "description": "Liquid oral",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.medicineform",
+    "pk": 4,
+    "fields": {
+      "name": "Injection",
+      "description": "Parenteral",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.medicineform",
+    "pk": 5,
+    "fields": {
+      "name": "Ointment",
+      "description": "Topical semi-solid",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.medicineform",
+    "pk": 6,
+    "fields": {
+      "name": "Drops",
+      "description": "Eye/ear/nasal drops",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 1,
+    "fields": {
+      "name": "Strip",
+      "description": "Strip (pack)",
+      "uom_type": "PACK",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 2,
+    "fields": {
+      "name": "Bottle",
+      "description": "Bottle (pack)",
+      "uom_type": "PACK",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 3,
+    "fields": {
+      "name": "Box",
+      "description": "Box (pack)",
+      "uom_type": "PACK",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 4,
+    "fields": {
+      "name": "Vial",
+      "description": "Vial (pack)",
+      "uom_type": "PACK",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 5,
+    "fields": {
+      "name": "Tube",
+      "description": "Tube (pack)",
+      "uom_type": "PACK",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 6,
+    "fields": {
+      "name": "Tablet",
+      "description": "Base tablet unit",
+      "uom_type": "BASE",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 7,
+    "fields": {
+      "name": "mL",
+      "description": "Millilitre",
+      "uom_type": "BASE",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
+  },
+  {
+    "model": "catalog.uom",
+    "pk": 8,
+    "fields": {
+      "name": "g",
+      "description": "Gram",
+      "uom_type": "BASE",
+      "is_active": true,
+      "created_at": "2025-11-07T08:00:00Z"
+    }
   }
 ]

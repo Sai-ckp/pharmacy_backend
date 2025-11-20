@@ -187,6 +187,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
 
     def _render_invoice_html(self, inv: SalesInvoice) -> str:
         lines = inv.lines.select_related("product", "batch_lot").all()
+        customer = getattr(inv, "customer", None)
         company = {
             "name": "",
             "address": "",
@@ -207,6 +208,36 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
                 }
         except Exception:
             pass
+        # Customer details for Bill To section
+        cust_name = getattr(customer, "name", "-") if customer else "-"
+        cust_phone = getattr(customer, "phone", "") if customer else ""
+        cust_email = getattr(customer, "email", "") if customer else ""
+        cust_addr_parts = []
+        if getattr(customer, "billing_address", None):
+            cust_addr_parts.append(customer.billing_address)
+        city_parts = []
+        if getattr(customer, "city", None):
+            city_parts.append(customer.city)
+        if getattr(customer, "state_code", None):
+            city_parts.append(customer.state_code)
+        city_line = ", ".join(city_parts)
+        if city_line:
+            cust_addr_parts.append(city_line)
+        if getattr(customer, "pincode", None):
+            cust_addr_parts.append(customer.pincode)
+        cust_address = ", ".join([p for p in cust_addr_parts if p])
+
+        # Payment information
+        last_payment = inv.payments.order_by("-received_at").first()
+        payment_mode = last_payment.mode if last_payment else "-"
+        served_by = "-"
+        try:
+            user = getattr(inv, "created_by", None)
+            if user:
+                served_by = getattr(user, "get_full_name", lambda: "")() or getattr(user, "username", "-")
+        except Exception:
+            pass
+
         rows = "".join([
             f"<tr><td>{i+1}</td><td>{ln.product.name}</td><td>{ln.batch_lot.batch_no}</td><td>{ln.qty_base}</td><td>{ln.rate_per_base}</td><td>{ln.line_total}</td></tr>"
             for i, ln in enumerate(lines)
@@ -216,14 +247,19 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         <style>body{{font-family:Arial,Helvetica,sans-serif}} table{{border-collapse:collapse;width:100%}} td,th{{border:1px solid #ddd;padding:8px}}</style>
         </head><body>
         <h2>Invoice #{inv.invoice_no or inv.id}</h2>
-        <p>Date: {inv.invoice_date.strftime('%Y-%m-%d %H:%M')}</p>
+        <p>Date: {inv.invoice_date.strftime('%d-%m-%Y %H:%M')}</p>
         <h3>{company['name']}</h3>
         <p>{company['address']}<br/>Phone: {company['phone']} Email: {company['email']}<br/>GST: {company['gst']}</p>
-        <h4>Bill To: {getattr(inv.customer,'name','-')}</h4>
+        <h4>Bill To:</h4>
+        <p>
+            {cust_name}<br/>
+            {cust_phone if cust_phone else ""}{("<br/>" if cust_phone and cust_email else "") if cust_email else ""}{cust_email if cust_email else ""}{("<br/>" if (cust_phone or cust_email) and cust_address else "") if cust_address else ""}{cust_address if cust_address else ""}
+        </p>
         <table><thead><tr><th>#</th><th>Medicine Name</th><th>Batch</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
         <tbody>{rows}</tbody></table>
         <p>Subtotal: {inv.gross_total} &nbsp; GST: {inv.tax_total} &nbsp; Total: {inv.net_total}</p>
-        <p>Payment Status: {inv.payment_status}</p>
+        <p>Payment Method: {payment_mode} &nbsp; Payment Status: {inv.payment_status}</p>
+        <p>Served By: {served_by}</p>
         <p>Thank you for choosing our pharmacy</p>
         </body></html>
         """
