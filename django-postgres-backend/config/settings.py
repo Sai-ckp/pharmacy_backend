@@ -1,3 +1,7 @@
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -104,6 +108,11 @@ USE_L10N = True
 USE_TZ = True
 
 STATIC_URL = '/static/'
+
+#media files
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 
 # Global date formats (DD-MM-YYYY)
 DATE_FORMAT = 'd-m-Y'
