@@ -8,6 +8,9 @@ class ReportExport(models.Model):
         H1_REGISTER = "H1_REGISTER", "H1 Register"
         NDPS_DAILY = "NDPS_DAILY", "NDPS Daily"
         STOCK_LEDGER = "STOCK_LEDGER", "Stock Ledger"
+        EXPIRY_STATUS = "EXPIRY_STATUS", "Expiry Status Report"
+        TOP_SELLING = "TOP_SELLING", "Top Selling Report"
+
 
     class Status(models.TextChoices):
         QUEUED = "QUEUED", "Queued"
