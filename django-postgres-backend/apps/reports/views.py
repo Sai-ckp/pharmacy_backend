@@ -16,24 +16,58 @@ class ReportExportViewSet(viewsets.ModelViewSet):
     serializer_class = ReportExportSerializer
     permission_classes = [permissions.AllowAny]
 
-    def perform_create(self, serializer):
-        export = serializer.save(status=ReportExport.Status.QUEUED)
+    def create(self, request, *args, **kwargs):
+        """
+        Override create so export file is generated and
+        returned immediately as a download.
+        """
+        # Create DB entry as usual
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        export = serializer.save(
+            status=ReportExport.Status.QUEUED,
+            started_at=timezone.now(),
+        )
+        export.status = ReportExport.Status.RUNNING
+        export.save(update_fields=["status", "started_at"])
+
         try:
-            export.started_at = timezone.now()
-            export.status = ReportExport.Status.RUNNING
-            export.save(update_fields=["status", "started_at"])
-            services.generate_report_file(export)
+            # 🔥 Generate Excel file
+            file_path = services.generate_report_file(export)
+
+            export.file_path = file_path
             export.status = ReportExport.Status.DONE
             export.finished_at = timezone.now()
+            export.save(update_fields=["status", "file_path", "finished_at"])
+
+            # Full file path
+            abs_path = os.path.join(settings.MEDIA_ROOT, file_path)
+            if not os.path.exists(abs_path):
+                raise FileNotFoundError("Export file missing")
+
+            # 🔥 Return file as a download
+            file_handle = open(abs_path, "rb")
+            response = FileResponse(
+                file_handle,
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            response["Content-Disposition"] = (
+                f'attachment; filename="{os.path.basename(file_path)}"'
+            )
+            return response
+
         except Exception as e:
             export.status = ReportExport.Status.FAILED
             export.file_path = str(e)
-        export.save(update_fields=["status", "finished_at", "file_path"])
+            export.save(update_fields=["status", "file_path"])
+            return Response({"error": str(e)}, status=500)
 
     @action(detail=False, methods=["get"], url_path="recent")
     def recent_exports(self, request):
         exports = self.queryset[:10]
-        return Response(self.get_serializer(exports, many=True).data, status=status.HTTP_200_OK)
+        return Response(self.get_serializer(exports, many=True).data)
+
 
 
 # -----------------------------------------------------------
