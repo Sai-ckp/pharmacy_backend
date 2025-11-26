@@ -165,3 +165,6 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     'DEFAULT_GENERATOR_CLASS': 'core.schema.CustomSchemaGenerator',
 }
+
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'no-reply@pharmacy.local'

@@ -1,14 +1,23 @@
+import random
+from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
 from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import ForgotPasswordSerializer, ResetPasswordSerializer
+from .models import PasswordResetOTP
+from .serializers import (
+    ForgotPasswordSerializer,
+    ResetPasswordSerializer,
+    VerifyOtpSerializer,
+)
 
 
 class HealthView(APIView):
@@ -27,18 +36,44 @@ class ForgotPasswordView(APIView):
         email = serializer.validated_data["email"]
         user = User.objects.filter(email__iexact=email).first()
         if not user:
-            return Response(
-                {"detail": "If an account exists for this email, password reset instructions were sent."}
-            )
+            return Response({"detail": "If an account exists for this email, an OTP has been sent."})
+        PasswordResetOTP.objects.filter(email__iexact=email, is_used=False).update(is_used=True)
+        otp = f"{random.randint(0, 999999):06d}"
+        PasswordResetOTP.objects.create(email=email, otp_hash=make_password(otp))
+        send_mail(
+            subject="Password reset OTP",
+            message=f"Hi {user.get_full_name() or user.username}, your OTP is {otp}. It expires in 10 minutes.",
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@example.com"),
+            recipient_list=[email],
+        )
+        return Response({"detail": "OTP sent if the account exists."})
+
+
+class VerifyOtpView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = VerifyOtpSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+        otp = serializer.validated_data["otp"]
+        record = (
+            PasswordResetOTP.objects.filter(email__iexact=email, is_used=False)
+            .order_by("-created_at")
+            .first()
+        )
+        if not record or record.is_expired():
+            return Response({"detail": "OTP expired. Please request a new one."}, status=status.HTTP_400_BAD_REQUEST)
+        if not check_password(otp, record.otp_hash):
+            return Response({"detail": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+        record.is_used = True
+        record.save(update_fields=["is_used"])
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            return Response({"detail": "User not found."}, status=status.HTTP_400_BAD_REQUEST)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        return Response(
-            {
-                "detail": "Password reset instructions generated.",
-                "uid": uid,
-                "token": token,
-            }
-        )
+        return Response({"uid": uid, "token": token})
 
 
 class ResetPasswordView(APIView):

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth.models import User
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
@@ -19,14 +21,21 @@ class AuthFlowTests(APITestCase):
         self.assertIn("refresh", resp.data)
 
     def test_full_password_reset_flow(self):
-        forgot = self.client.post(
-            "/api/v1/accounts/forgot-password/",
-            {"email": self.user.email},
+        with patch("apps.accounts.views.random.randint", return_value=123456):
+            forgot = self.client.post(
+                "/api/v1/accounts/forgot-password/",
+                {"email": self.user.email},
+                format="json",
+            )
+        self.assertEqual(forgot.status_code, status.HTTP_200_OK)
+        verify = self.client.post(
+            "/api/v1/accounts/verify-otp/",
+            {"email": self.user.email, "otp": "123456"},
             format="json",
         )
-        self.assertEqual(forgot.status_code, status.HTTP_200_OK)
-        uid = forgot.data.get("uid")
-        token = forgot.data.get("token")
+        self.assertEqual(verify.status_code, status.HTTP_200_OK)
+        uid = verify.data.get("uid")
+        token = verify.data.get("token")
         self.assertTrue(uid)
         self.assertTrue(token)
 
