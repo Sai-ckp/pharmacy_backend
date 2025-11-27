@@ -2,6 +2,15 @@ from django.db import models
 
 
 class Vendor(models.Model):
+    class SupplierType(models.TextChoices):
+            ONLINE = "ONLINE", "External Website (PDF Import)"
+            OFFLINE = "OFFLINE", "Manual Order in ERP"
+
+    supplier_type = models.CharField(
+            max_length=16,
+            choices=SupplierType.choices,
+            default=SupplierType.OFFLINE
+        )
     name = models.CharField(max_length=200)
     gstin = models.CharField(max_length=32, blank=True)
     contact_phone = models.CharField(max_length=32, blank=True)
@@ -38,15 +47,57 @@ class Purchase(models.Model):
 
 
 class PurchaseLine(models.Model):
-    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='lines')
-    product = models.ForeignKey('catalog.Product', on_delete=models.PROTECT)
-    batch_no = models.CharField(max_length=64)
+    purchase = models.ForeignKey(
+        Purchase, 
+        on_delete=models.CASCADE, 
+        related_name='lines'
+    )
+    product = models.ForeignKey(
+        'catalog.Product', 
+        on_delete=models.PROTECT
+    )
+
+    # Optional fields from PDF
+    product_code = models.CharField(max_length=64, null=True, blank=True)
+    pack = models.CharField(max_length=64, null=True, blank=True)
+    hsn = models.CharField(max_length=32, null=True, blank=True)
+
+    batch_no = models.CharField(max_length=64, null=True, blank=True)
+    mfg_date = models.DateField(null=True, blank=True)
     expiry_date = models.DateField(null=True, blank=True)
 
-    qty_packs = models.IntegerField()
-    received_base_qty = models.DecimalField(max_digits=14, decimal_places=3, default=0)
-    unit_cost = models.DecimalField(max_digits=14, decimal_places=2)
-    mrp = models.DecimalField(max_digits=14, decimal_places=2)
+    qty_packs = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    free_qty = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+
+    unit_cost = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    mrp = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    discount_percent = models.DecimalField(max_digits=14, decimal_places=3, null=True, blank=True)
+    discount_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    taxable_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    cgst_percent = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    cgst_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    sgst_percent = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    sgst_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    net_value = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+
+    # Existing field
+    received_base_qty = models.DecimalField(
+        max_digits=14,
+        decimal_places=3,
+        default=0
+    )
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.qty_packs or 0}"
+
 
 
 class PurchasePayment(models.Model):

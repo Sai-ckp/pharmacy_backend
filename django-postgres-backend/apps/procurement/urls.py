@@ -4,7 +4,7 @@ from .views import (
     HealthView, VendorViewSet, PurchaseViewSet, PurchasePaymentViewSet,
     PurchaseDocumentViewSet, VendorReturnViewSet,
     PurchaseOrderViewSet, GoodsReceiptViewSet,
-    GrnImportPdfView, PoImportCommitView, GrnImportCommitView, PurchasesMonthlyStatsView,
+    GrnImportPdfView, PoImportCommitView, GrnImportCommitView, PurchasesMonthlyStatsView,PurchasePDFImportView,
 )
 
 router = DefaultRouter()
@@ -23,5 +23,6 @@ urlpatterns = [
     path('purchase-orders/import-commit', PoImportCommitView.as_view(), name='po-import-commit'),
     path('grns/import-commit', GrnImportCommitView.as_view(), name='grn-import-commit'),
     path('stats/purchases-monthly/', PurchasesMonthlyStatsView.as_view(), name='purchases-monthly-stats'),
+    path("import-purchase-pdf/", PurchasePDFImportView.as_view(), name="import-purchase-pdf"),  
 ]
 

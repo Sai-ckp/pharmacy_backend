@@ -12,7 +12,8 @@ from .models import RackLocation, InventoryMovement
 from .serializers import RackLocationSerializer
 from apps.settingsx.services import get_setting
 from django.db import transaction
-
+from apps.inventory.models import BatchStock
+from apps.settingsx.utils import get_stock_thresholds
 
 def _parse_date(value):
     """
@@ -144,18 +145,59 @@ class MovementsListView(APIView):
 
 
 class LowStockView(APIView):
+
     @extend_schema(
         tags=["Inventory"],
         summary="List low stock products at a location",
-        parameters=[OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True)],
+        parameters=[
+            OpenApiParameter("location_id", OpenApiTypes.INT, OpenApiParameter.QUERY, required=True)
+        ],
         responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
     )
     def get(self, request):
         location_id = request.query_params.get("location_id")
         if not location_id:
             return Response({"detail": "location_id is required"}, status=status.HTTP_400_BAD_REQUEST)
-        data = low_stock(location_id=int(location_id))
+
+        data = self.low_stock(int(location_id))
         return Response(data)
+
+
+    @staticmethod
+    def low_stock(location_id):
+        low_threshold, critical_threshold = get_stock_thresholds()
+
+        # Sum stock for each product by combining all batches
+        products = (
+            BatchStock.objects.filter(location_id=location_id)
+            .values("batch__product", "batch__product__name")
+            .annotate(total_qty=Sum("quantity"))
+        )
+
+        result = []
+        for p in products:
+            qty = float(p["total_qty"] or 0)
+
+            # Determine status
+            if qty <= 0:
+                status = "OUT_OF_STOCK"
+            elif qty <= critical_threshold:
+                status = "CRITICAL"
+            elif qty <= low_threshold:
+                status = "LOW"
+            else:
+                status = "IN_STOCK"
+
+            result.append({
+                "product_id": p["batch__product"],
+                "name": p["batch__product__name"],
+                "quantity": qty,
+                "status": status,
+            })
+
+        return result
+
+
 
 
 class ExpiringView(APIView):

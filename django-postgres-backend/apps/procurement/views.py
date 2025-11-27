@@ -26,6 +26,12 @@ from apps.catalog.services_vendor_map import product_by_vendor_code
 from apps.governance.services import audit
 from django.db.models.functions import TruncMonth
 from django.db.models import Sum
+import os
+from django.core.files.storage import default_storage
+from .models import Purchase, PurchaseLine
+from apps.catalog.models import Product, BatchLot
+from apps.procurement.utils_pdf import extract_purchase_items_from_pdf
+from django.conf import settings
 
 
 class HealthView(APIView):
@@ -492,3 +498,176 @@ class PurchasesMonthlyStatsView(APIView):
         series = [{"month": k, "total": round(v, 2)} for k, v in sorted(bucket.items())][-months:]
         return Response(series)
 
+
+class PurchasePDFImportView(APIView):
+
+    def post(self, request):
+        vendor_id = request.data.get("vendor_id")
+        location_id = request.data.get("location_id")
+        file = request.FILES.get("file")
+
+        if not file:
+            return Response({"detail": "No PDF file uploaded"}, status=400)
+
+        # Save file temporarily
+        file_path = default_storage.save("temp/" + file.name, file)
+
+        # Extract items
+        items = extract_purchase_items_from_pdf(file_path)
+        if not items:
+            return Response({"detail": "Could not extract any items from PDF"}, status=400)
+
+        with transaction.atomic():
+
+            # Create Purchase record
+            purchase = Purchase.objects.create(
+                vendor_id=vendor_id,
+                location_id=location_id,
+                invoice_date=None,
+                gross_total=0,
+                net_total=0
+            )
+
+            total_net = 0
+
+            for item in items:
+
+                # Match product (by code OR name)
+                product = Product.objects.filter(code=item["product_code"]).first()
+                if not product:
+                    product = Product.objects.filter(name__icontains=item["name"]).first()
+
+                if not product:
+                    continue  # Skip unknown product
+
+                PurchaseLine.objects.create(
+                    purchase=purchase,
+                    product=product,
+                    batch_no=item["batch_no"],
+                    expiry_date=item["expiry"],
+                    qty_packs=item["qty"],
+                    unit_cost=item["cost"],
+                    mrp=item["mrp"]
+                )
+
+                total_net += item["net_value"]
+
+            # Update totals
+            purchase.net_total = total_net
+            purchase.gross_total = total_net
+            purchase.save()
+
+        return Response({
+            "message": "PDF imported successfully",
+            "purchase_id": purchase.id,
+            "items_count": len(items)
+        })
+    
+class PurchasePDFImportView(APIView):
+    """
+    POST multipart/form-data:
+      - file: pdf file
+      - vendor_id: id
+      - location_id: id
+      - auto_receive: optional boolean (if present and true, create GRN + InventoryMovement)
+    """
+
+    def post(self, request):
+        file = request.FILES.get("file")
+        vendor_id = request.data.get("vendor_id")
+        location_id = request.data.get("location_id")
+        auto_receive = request.data.get("auto_receive") in ["1", "true", "True", True]
+
+        if not file:
+            return Response({"detail": "file is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not vendor_id or not location_id:
+            return Response({"detail": "vendor_id and location_id are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Save temp file
+        tmp_path = default_storage.save("temp_pdfs/" + file.name, file)
+        tmp_full = default_storage.path(tmp_path) if hasattr(default_storage, 'path') else os.path.join(settings.MEDIA_ROOT, tmp_path)
+
+        # Extract items
+        items = extract_purchase_items_from_pdf(tmp_full)
+        if not items:
+            # cleanup
+            try:
+                default_storage.delete(tmp_path)
+            except Exception:
+                pass
+            return Response({"detail": "no items extracted from PDF"}, status=status.HTTP_400_BAD_REQUEST)
+
+        created_purchase = None
+        created_lines = 0
+        with transaction.atomic():
+            purchase = Purchase.objects.create(
+                vendor_id=vendor_id,
+                location_id=location_id,
+                vendor_invoice_no="",
+                invoice_date=None,
+                gross_total=0,
+                tax_total=0,
+                net_total=0,
+            )
+
+            total_net = 0
+            for it in items:
+                # find or create product
+                product = None
+                code = (it.get("product_code") or "").strip()
+                name = (it.get("name") or "").strip()
+
+                if code:
+                    product = Product.objects.filter(code__iexact=code).first()
+                if product is None and name:
+                    product = Product.objects.filter(name__iexact=name).first()
+                if product is None and name:
+                    # fallback: try name contains
+                    product = Product.objects.filter(name__icontains=name.split()[0]).first()
+
+                if product is None:
+                    # create product with minimal required fields
+                    product = Product.objects.create(
+                        code=code or None,
+                        name=name or "UNKNOWN",
+                        mrp=it.get("mrp") or 0,
+                        base_unit="UNIT",
+                        pack_unit=it.get("pack") or "PACK",
+                        units_per_pack=1,
+                    )
+
+                # create PurchaseLine
+                pl = PurchaseLine.objects.create(
+                    purchase=purchase,
+                    product=product,
+                    batch_no=it.get("batch_no") or "",
+                    expiry_date=it.get("expiry_date"),
+                    qty_packs=int(it.get("qty") or 0),
+                    unit_cost=it.get("rate") or 0,
+                    mrp=it.get("mrp") or 0,
+                )
+
+                # if you added new fields to PurchaseLine (discount, cgst, etc.) set them here if present
+                # example:
+                # pl.discount_percent = it.get("discount_percent"); pl.save()
+
+                total_net += float(it.get("net_value") or 0)
+                created_lines += 1
+
+            # update purchase totals
+            purchase.net_total = total_net
+            purchase.gross_total = total_net
+            purchase.save()
+            created_purchase = purchase
+
+        # cleanup temp file
+        try:
+            default_storage.delete(tmp_path)
+        except Exception:
+            pass
+
+        return Response({
+            "message": "imported",
+            "purchase_id": created_purchase.id,
+            "lines_created": created_lines
+        }, status=status.HTTP_201_CREATED)    
