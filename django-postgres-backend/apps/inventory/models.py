@@ -26,6 +26,22 @@ class InventoryMovement(models.Model):
             models.Index(fields=["ref_doc_type", "ref_doc_id"], name="idx_move_refdoc"),
         ]
 
+class BatchStock(models.Model):
+    batch = models.ForeignKey('catalog.BatchLot', on_delete=models.CASCADE)
+    location = models.ForeignKey('locations.Location', on_delete=models.CASCADE)
+    quantity = models.DecimalField(max_digits=14, decimal_places=3, default=0)
+
+    class Meta:
+        unique_together = ('batch', 'location')
+        indexes = [
+            models.Index(fields=['location']),
+            models.Index(fields=['batch']),
+        ]
+
+    def __str__(self):
+        return f"{self.batch.product.name} - {self.batch.batch_no} @ {self.location.name}: {self.quantity}"
+
+
 
 class RackRule(models.Model):
     location = models.ForeignKey('locations.Location', on_delete=models.CASCADE)
