@@ -6,6 +6,7 @@ from django.db.models import Sum, Count
 from datetime import date, timedelta
 from .models import Customer
 from .serializers import CustomerSerializer
+from apps.sales.models import SalesInvoice
 
 
 class CustomerViewSet(viewsets.ModelViewSet):
@@ -28,60 +29,60 @@ class CustomerViewSet(viewsets.ModelViewSet):
     )
     def list(self, request, *args, **kwargs):
 
-        # --------------------------- DASHBOARD STATS ---------------------------
-        if request.query_params.get("stats") == "true":
-            from apps.sales.models import SalesInvoice
+            # --------------------------- DASHBOARD STATS ---------------------------
+      if request.query_params.get("stats") == "true":
+        
 
-            filtered_by = request.query_params.get("filter")  # day / week / month
-            from_str = request.query_params.get("from")
-            to_str = request.query_params.get("to")
+        filtered_by = request.query_params.get("filter")  # day / week / month
+        from_str = request.query_params.get("from")
+        to_str = request.query_params.get("to")
 
-            inv = SalesInvoice.objects.filter(status=SalesInvoice.Status.POSTED)
+        inv = SalesInvoice.objects.filter(status=SalesInvoice.Status.POSTED)
 
-            today = date.today()
+        today = date.today()
 
-            # --------------------------- PRESET FILTERS ---------------------------
-            if filtered_by == "day":
-                inv = inv.filter(invoice_date__date=today)
+        # --------------------------- PRESET FILTERS ---------------------------
+        if filtered_by == "day":
+            inv = inv.filter(invoice_date__date=today)
 
-            elif filtered_by == "week":
-                week_start = today - timedelta(days=today.weekday())
-                inv = inv.filter(invoice_date__date__gte=week_start)
+        elif filtered_by == "week":
+            week_start = today - timedelta(days=today.weekday())
+            inv = inv.filter(invoice_date__date__gte=week_start)
 
-            elif filtered_by == "month":
-                month_start = today.replace(day=1)
-                inv = inv.filter(invoice_date__date__gte=month_start)
+        elif filtered_by == "month":
+            month_start = today.replace(day=1)
+            inv = inv.filter(invoice_date__date__gte=month_start)
 
-            # --------------------------- CUSTOM DATE RANGE ---------------------------
-            if from_str:
-                inv = inv.filter(invoice_date__gte=from_str)
-            if to_str:
-                inv = inv.filter(invoice_date__lte=to_str)
+        # --------------------------- CUSTOM DATE RANGE ---------------------------
+        if from_str:
+            inv = inv.filter(invoice_date__gte=from_str)
+        if to_str:
+            inv = inv.filter(invoice_date__lte=to_str)
 
-            # --------------------------- CALCULATE KPIs ---------------------------
-            total_customers = Customer.objects.count()
+        # --------------------------- CALCULATE KPIs ---------------------------
 
-            revenue = inv.aggregate(total=Sum("net_total"))["total"] or 0
-            txn = inv.count()
-            avg_purchase_value = round((revenue / txn), 2) if txn else 0
+        # Total customers who have invoices in this filtered period
+        filtered_customer_ids = inv.values_list("customer_id", flat=True).distinct()
+        total_customers = filtered_customer_ids.count()
 
-            # ACTIVE CUSTOMERS (ALL TIME)
-            active_customers = (
-                SalesInvoice.objects.filter(status=SalesInvoice.Status.POSTED)
-                .values("customer_id")
-                .distinct()
-                .count()
-            )
+        # Revenue and average purchase value
+        revenue = inv.aggregate(total=Sum("net_total"))["total"] or 0
+        txn = inv.count()
+        avg_purchase_value = round((revenue / txn), 2) if txn else 0
 
-            return Response({
-                "total_customers": total_customers,
-                "avg_purchase_value": avg_purchase_value,
-                "active_customers": active_customers,
-                "filter_used": filtered_by or "none",
-            })
+        # Active customers = customers who purchased in this filtered period
+        active_customers = total_customers
+
+        return Response({
+            "total_customers": total_customers,
+            "avg_purchase_value": avg_purchase_value,
+            "active_customers": active_customers,
+            "filter_used": filtered_by or "none",
+        })
+
 
         # --------------------------- NORMAL LIST ---------------------------
-        return super().list(request, *args, **kwargs)
+      return super().list(request, *args, **kwargs)
 
 
     # --------------------------- CUSTOMER SUMMARY ---------------------------

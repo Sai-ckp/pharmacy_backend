@@ -43,6 +43,14 @@ class SalesInvoice(models.Model):
         on_delete=models.SET_NULL,
         related_name="posted_invoices"
     )
+
+    payment_type = models.ForeignKey(
+        "settingsx.PaymentMethod",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="invoices"
+    )
     payment_status = models.CharField(max_length=16, choices=PaymentStatus.choices, default=PaymentStatus.CREDIT)
 
     disclaimers = models.TextField(blank=True, null=True)

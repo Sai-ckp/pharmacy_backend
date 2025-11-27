@@ -3,6 +3,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from .models import SalesInvoice, SalesLine, SalesPayment
 from apps.catalog.models import Product, BatchLot
 from apps.customers.models import Customer
+from apps.settingsx.models import PaymentMethod
+from apps.customers.serializers import CustomerSerializer
+from django.utils import timezone
 
 AMOUNT_QUANT = Decimal("0.0001")
 CURRENCY_QUANT = Decimal("0.01")
@@ -44,15 +47,31 @@ class SalesPaymentSerializer(serializers.ModelSerializer):
         return v
 
 
-
 class SalesInvoiceSerializer(serializers.ModelSerializer):
     # Nested serializers
     lines = SalesLineSerializer(many=True)
     payments = SalesPaymentSerializer(many=True, read_only=True)
-    # Existing customer (by id)
+    customer_detail = CustomerSerializer(source="customer", read_only=True)
     customer = serializers.PrimaryKeyRelatedField(
-        queryset=Customer.objects.all(), required=False, allow_null=True
+        queryset=Customer.objects.all(),
+        required=False,
+        allow_null=True
     )
+
+    # expose payment_type as writable FK and a read-only nested detail
+    payment_type = serializers.PrimaryKeyRelatedField(
+        queryset=PaymentMethod.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=False
+    )
+    payment_type_detail = serializers.SerializerMethodField(read_only=True)
+
+    def get_payment_type_detail(self, obj):
+        if obj.payment_type:
+            return {"id": obj.payment_type.id, "name": str(obj.payment_type)}
+        return None
+
     # Optional inline customer fields for new customers created from bill screen
     customer_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
     customer_phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -152,7 +171,8 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         )
 
     def _get_or_create_customer_from_inline(self, validated_data):
-        customer = validated_data.get("customer")
+        # NOTE: your original code used customer_id and then created Customer
+        customer = validated_data.get("customer_id")
         if customer:
             return customer
         # Pop inline fields (they are not model fields)
@@ -196,12 +216,25 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         lines = validated_data.pop("lines", [])
+
+        # Extract payment details from request
+        # Note: incoming keys from the client should be "payment_method" and "amount_paid"
+        # payment_method is the ID used for SalesPayment creation.
+        payment_method = validated_data.pop("payment_method", None)
+        amount_paid = validated_data.pop("amount_paid", None)
+
+        # If client passed "payment_type" (invoice-level FK), consume it here
+        payment_type = validated_data.pop("payment_type", None)
+
         # Attach or create customer if needed
         customer = self._get_or_create_customer_from_inline(validated_data)
         if customer is not None:
-            validated_data["customer"] = customer
+            validated_data["customer_id"] = customer.id
+
+        # Create invoice (initially draft)
         invoice = SalesInvoice.objects.create(**validated_data)
 
+        # Compute line totals & create SalesLine rows
         gross, disc, tax, net, round_off = self._compute_totals_and_create_lines(
             invoice, lines
         )
@@ -211,9 +244,56 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         invoice.tax_total = tax
         invoice.net_total = net
         invoice.round_off_amount = round_off
-        invoice.outstanding = net  # initially full outstanding
-        invoice.total_paid = Decimal("0.00")
+
+        # Default before payments
+        total_paid = Decimal("0.00")
+
+        # -------------------- PAYMENT HANDLING --------------------
+        # If client provided payment_method and amount_paid -> create SalesPayment and update invoice
+        if payment_method and amount_paid:
+            # create payment record
+            SalesPayment.objects.create(
+                invoice=invoice,
+                payment_method_id=payment_method,
+                amount=Decimal(amount_paid),
+                received_by=self.context["request"].user
+            )
+            total_paid = Decimal(amount_paid)
+
+            # set invoice's payment_type to the payment_method used (if not provided separately)
+            try:
+                invoice.payment_type_id = payment_type.id if hasattr(payment_type, "id") else payment_type or payment_method
+            except Exception:
+                invoice.payment_type_id = payment_method
+
+            # Mark invoice as posted and set posted metadata
+            invoice.status = SalesInvoice.Status.POSTED
+            invoice.posted_at = timezone.now()
+            invoice.posted_by = self.context["request"].user
+
+        # If client only passed payment_type (invoice-level) but no immediate payment, attach it
+        elif payment_type:
+            try:
+                invoice.payment_type = payment_type
+            except Exception:
+                # If payment_type is provided as primary key:
+                invoice.payment_type_id = payment_type
+
+        # Update payment status based on totals
+        invoice.total_paid = total_paid
+        # outstanding = net - total_paid
+        invoice.outstanding = (net - total_paid).quantize(CURRENCY_QUANT)
+
+        # Set payment_status enum
+        if total_paid == Decimal("0.00"):
+            invoice.payment_status = SalesInvoice.PaymentStatus.CREDIT
+        elif total_paid >= net:
+            invoice.payment_status = SalesInvoice.PaymentStatus.PAID
+        else:
+            invoice.payment_status = SalesInvoice.PaymentStatus.PARTIAL
+
         invoice.save()
+
         return invoice
 
     def update(self, instance, validated_data):
@@ -230,6 +310,14 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         validated_data.pop("customer_state_code", None)
         validated_data.pop("customer_pincode", None)
 
+        # allow updating payment_type if provided
+        if "payment_type" in validated_data:
+            pt = validated_data.pop("payment_type")
+            try:
+                instance.payment_type = pt
+            except Exception:
+                instance.payment_type_id = pt
+
         for key, value in validated_data.items():
             setattr(instance, key, value)
         instance.save()
@@ -244,6 +332,23 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
             instance.tax_total = tax
             instance.net_total = net
             instance.round_off_amount = round_off
+
+            # Recompute outstanding based on existing payments
+            paid_sum = instance.payments.aggregate(total=models.Sum("amount"))["total"] or Decimal("0.00")
+            instance.total_paid = paid_sum
+            instance.outstanding = (net - paid_sum).quantize(CURRENCY_QUANT)
+
+            # Update payment status
+            if paid_sum == Decimal("0.00"):
+                instance.payment_status = SalesInvoice.PaymentStatus.CREDIT
+            elif paid_sum >= net:
+                instance.payment_status = SalesInvoice.PaymentStatus.PAID
+                instance.status = SalesInvoice.Status.POSTED
+                instance.posted_at = timezone.now()
+                instance.posted_by = self.context["request"].user
+            else:
+                instance.payment_status = SalesInvoice.PaymentStatus.PARTIAL
+
             instance.save()
 
         return instance
