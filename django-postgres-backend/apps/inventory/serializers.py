@@ -1,8 +1,13 @@
+from decimal import Decimal
+
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework import status
 from rest_framework.exceptions import APIException
 
+from apps.catalog.models import ProductCategory, Product, MedicineForm, Uom
 from .models import InventoryMovement, RackLocation
+from .services import convert_quantity_to_base
 
 
 class Conflict(APIException):
@@ -35,4 +40,193 @@ class RackLocationSerializer(serializers.ModelSerializer):
             raise Conflict()
         attrs["name"] = name
         return attrs
+
+
+class MasterRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+
+
+class MedicinePayloadSerializer(serializers.Serializer):
+    id = serializers.IntegerField(required=False)
+    name = serializers.CharField(max_length=200)
+    generic_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    category = serializers.PrimaryKeyRelatedField(queryset=ProductCategory.objects.all())
+    form = serializers.PrimaryKeyRelatedField(queryset=MedicineForm.objects.all(), source="medicine_form")
+    strength = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    base_uom = serializers.PrimaryKeyRelatedField(queryset=Uom.objects.all())
+    selling_uom = serializers.PrimaryKeyRelatedField(queryset=Uom.objects.all())
+    rack_location = serializers.PrimaryKeyRelatedField(queryset=RackLocation.objects.all())
+    tablets_per_strip = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    strips_per_box = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    gst_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    storage_instructions = serializers.CharField(required=False, allow_blank=True)
+    reorder_level = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    mrp = serializers.DecimalField(max_digits=14, decimal_places=2)
+    units_per_pack = serializers.DecimalField(max_digits=14, decimal_places=3, required=False, allow_null=True)
+
+    def validate_id(self, value):
+        if value and not Product.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Invalid medicine id.")
+        return value
+
+    def validate(self, attrs):
+        attrs["name"] = (attrs.get("name") or "").strip()
+        if not attrs["name"]:
+            raise serializers.ValidationError({"name": "This field is required."})
+        if "generic_name" in attrs:
+            attrs["generic_name"] = (attrs.get("generic_name") or "").strip()
+        if "strength" in attrs:
+            attrs["strength"] = (attrs.get("strength") or "").strip()
+        if "description" in attrs:
+            attrs["description"] = attrs.get("description") or ""
+        if "storage_instructions" in attrs:
+            attrs["storage_instructions"] = attrs.get("storage_instructions") or ""
+
+        units_per_pack = attrs.get("units_per_pack")
+        tablets_per_strip = attrs.get("tablets_per_strip")
+        strips_per_box = attrs.get("strips_per_box")
+        selling_uom = attrs.get("selling_uom")
+        base_uom = attrs.get("base_uom")
+        if units_per_pack is not None:
+            units_per_pack = Decimal(str(units_per_pack))
+        inferred = self._infer_units_per_pack(
+            provided=units_per_pack,
+            selling_uom=selling_uom,
+            base_uom=base_uom,
+            tablets_per_strip=tablets_per_strip,
+            strips_per_box=strips_per_box,
+        )
+        if inferred is None:
+            raise serializers.ValidationError({"units_per_pack": "Unable to determine units_per_pack for the selected UOMs."})
+        attrs["units_per_pack"] = inferred
+
+        reorder_level = attrs.get("reorder_level")
+        attrs["reorder_level"] = Decimal(str(reorder_level or 0))
+        gst_percent = attrs.get("gst_percent")
+        attrs["gst_percent"] = Decimal(str(gst_percent or 0))
+        attrs["mrp"] = Decimal(str(attrs.get("mrp")))
+        return attrs
+
+    @staticmethod
+    def _infer_units_per_pack(*, provided: Decimal | None, selling_uom: Uom, base_uom: Uom, tablets_per_strip: int | None, strips_per_box: int | None) -> Decimal | None:
+        if provided is not None:
+            if provided <= 0:
+                raise serializers.ValidationError({"units_per_pack": "Must be greater than zero."})
+            return provided
+        if selling_uom and base_uom and selling_uom.id == base_uom.id:
+            return Decimal("1.000")
+        selling_name = (selling_uom.name or "").strip().upper() if selling_uom else ""
+        if selling_name in {"STRIP", "STRIPS"}:
+            if not tablets_per_strip:
+                raise serializers.ValidationError({"tablets_per_strip": "tablets_per_strip is required for STRIP quantities."})
+            return Decimal(tablets_per_strip)
+        if selling_name in {"BOX", "BOXES"}:
+            if not tablets_per_strip:
+                raise serializers.ValidationError({"tablets_per_strip": "tablets_per_strip is required for BOX quantities."})
+            if not strips_per_box:
+                raise serializers.ValidationError({"strips_per_box": "strips_per_box is required for BOX quantities."})
+            return Decimal(tablets_per_strip) * Decimal(strips_per_box)
+        return None
+
+
+class MedicineBatchInputSerializer(serializers.Serializer):
+    batch_number = serializers.CharField(max_length=64)
+    mfg_date = serializers.DateField(required=False, allow_null=True)
+    expiry_date = serializers.DateField()
+    quantity = serializers.IntegerField(min_value=0)
+    quantity_uom = serializers.PrimaryKeyRelatedField(queryset=Uom.objects.all())
+    purchase_price = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+    def validate_batch_number(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("This field is required.")
+        return value
+
+    def validate(self, attrs):
+        mfg = attrs.get("mfg_date")
+        expiry = attrs.get("expiry_date")
+        if mfg and expiry and mfg > expiry:
+            raise serializers.ValidationError({"expiry_date": "Expiry must be after manufacture date."})
+        if expiry and expiry < timezone.now().date():
+            # Allow creation but inform API consumer
+            raise serializers.ValidationError({"expiry_date": "Expiry date cannot be in the past."})
+        attrs["purchase_price"] = Decimal(str(attrs.get("purchase_price")))
+        attrs["quantity"] = int(attrs.get("quantity"))
+        return attrs
+
+
+class AddMedicineRequestSerializer(serializers.Serializer):
+    location_id = serializers.IntegerField(required=False)
+    medicine = MedicinePayloadSerializer()
+    batch = MedicineBatchInputSerializer()
+
+    def validate(self, attrs):
+        medicine = attrs.get("medicine") or {}
+        batch = attrs.get("batch") or {}
+        quantity = Decimal(str(batch.get("quantity", 0)))
+        qty_base, factor = convert_quantity_to_base(
+            quantity=quantity,
+            base_uom=medicine.get("base_uom"),
+            selling_uom=medicine.get("selling_uom"),
+            quantity_uom=batch.get("quantity_uom"),
+            units_per_pack=medicine.get("units_per_pack"),
+            tablets_per_strip=medicine.get("tablets_per_strip"),
+            strips_per_box=medicine.get("strips_per_box"),
+        )
+        batch["quantity_base"] = qty_base
+        batch["conversion_factor"] = factor
+        attrs["batch"] = batch
+        attrs["medicine"] = medicine
+        return attrs
+
+
+class MedicineResponseSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    code = serializers.CharField(allow_null=True, required=False)
+    name = serializers.CharField()
+    generic_name = serializers.CharField(required=False, allow_blank=True)
+    strength = serializers.CharField(required=False, allow_blank=True)
+    category = MasterRefSerializer()
+    form = MasterRefSerializer()
+    base_uom = MasterRefSerializer()
+    selling_uom = MasterRefSerializer()
+    rack_location = MasterRefSerializer()
+    gst_percent = serializers.CharField()
+    description = serializers.CharField()
+    storage_instructions = serializers.CharField()
+    reorder_level = serializers.CharField()
+    tablets_per_strip = serializers.IntegerField(required=False, allow_null=True)
+    strips_per_box = serializers.IntegerField(required=False, allow_null=True)
+    mrp = serializers.CharField()
+    status = serializers.CharField()
+
+
+class MedicineBatchResponseSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    batch_number = serializers.CharField()
+    status = serializers.CharField()
+    mfg_date = serializers.DateField(allow_null=True)
+    expiry_date = serializers.DateField(allow_null=True)
+    quantity = serializers.CharField()
+    quantity_uom = MasterRefSerializer()
+    base_quantity = serializers.CharField()
+    purchase_price = serializers.CharField()
+    purchase_price_per_base = serializers.CharField()
+    current_stock_base = serializers.CharField()
+
+
+class InventorySummarySerializer(serializers.Serializer):
+    location_id = serializers.IntegerField()
+    movement_id = serializers.IntegerField(allow_null=True)
+    stock_status = serializers.CharField()
+    stock_on_hand_base = serializers.CharField()
+
+
+class AddMedicineResponseSerializer(serializers.Serializer):
+    medicine = MedicineResponseSerializer()
+    batch = MedicineBatchResponseSerializer()
+    inventory = InventorySummarySerializer()
 

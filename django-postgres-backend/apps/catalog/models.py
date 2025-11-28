@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.utils import timezone
 
@@ -28,6 +30,8 @@ class Product(models.Model):
     schedule = models.CharField(max_length=8, choices=Schedule.choices, default=Schedule.OTC)
     category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True)
     medicine_form = models.ForeignKey("catalog.MedicineForm", on_delete=models.SET_NULL, null=True, blank=True)
+    base_uom = models.ForeignKey('catalog.Uom', on_delete=models.PROTECT, null=True, blank=True, related_name='products_as_base')
+    selling_uom = models.ForeignKey('catalog.Uom', on_delete=models.PROTECT, null=True, blank=True, related_name='products_as_selling')
     pack_size = models.CharField(max_length=64, blank=True)
     manufacturer = models.CharField(max_length=200, blank=True)
     mrp = models.DecimalField(max_digits=14, decimal_places=2, help_text="MRP per pack")
@@ -39,9 +43,12 @@ class Product(models.Model):
     reorder_level = models.DecimalField(max_digits=14, decimal_places=3, default=0)
     description = models.TextField(blank=True)
     storage_instructions = models.TextField(blank=True)
+    rack_location = models.ForeignKey('inventory.RackLocation', on_delete=models.PROTECT, null=True, blank=True)
     preferred_vendor = models.ForeignKey('procurement.Vendor', on_delete=models.SET_NULL, null=True, blank=True)
     is_sensitive = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    tablets_per_strip = models.PositiveIntegerField(null=True, blank=True)
+    strips_per_box = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         indexes = [
@@ -62,6 +69,28 @@ class Product(models.Model):
             raise ValueError("base_unit_step must be > 0")
         if self.reorder_level is not None and self.reorder_level < 0:
             raise ValueError("reorder_level must be >= 0")
+        if self.tablets_per_strip is not None and self.tablets_per_strip <= 0:
+            raise ValueError("tablets_per_strip must be > 0")
+        if self.strips_per_box is not None and self.strips_per_box <= 0:
+            raise ValueError("strips_per_box must be > 0")
+
+        # Keep legacy unit char fields in sync with master tables when possible
+        if self.base_uom_id and getattr(self.base_uom, "name", None):
+            self.base_unit = self.base_uom.name
+        elif not self.base_uom_id and self.base_unit:
+            try:
+                self.base_uom = Uom.objects.get(name__iexact=self.base_unit)
+            except Uom.DoesNotExist:
+                pass
+
+        if self.selling_uom_id and getattr(self.selling_uom, "name", None):
+            self.pack_unit = self.selling_uom.name
+        elif not self.selling_uom_id and self.pack_unit:
+            try:
+                self.selling_uom = Uom.objects.get(name__iexact=self.pack_unit)
+            except Uom.DoesNotExist:
+                pass
+
         super().save(*args, **kwargs)
 
 
@@ -132,6 +161,11 @@ class BatchLot(models.Model):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.ACTIVE)
     recall_reason = models.TextField(blank=True)
     rack_no = models.CharField(max_length=64, blank=True)
+    quantity_uom = models.ForeignKey('catalog.Uom', on_delete=models.PROTECT, null=True, blank=True, related_name='batch_quantity_uoms')
+    initial_quantity = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal("0.000"))
+    initial_quantity_base = models.DecimalField(max_digits=14, decimal_places=3, default=Decimal("0.000"))
+    purchase_price = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    purchase_price_per_base = models.DecimalField(max_digits=14, decimal_places=6, default=Decimal("0.000000"))
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -150,5 +184,13 @@ class BatchLot(models.Model):
     def save(self, *args, **kwargs):
         if self.expiry_date and self.expiry_date < timezone.now().date():
             self.status = BatchLot.Status.EXPIRED
+        if self.initial_quantity is not None and self.initial_quantity < 0:
+            raise ValueError("initial_quantity must be >= 0")
+        if self.initial_quantity_base is not None and self.initial_quantity_base < 0:
+            raise ValueError("initial_quantity_base must be >= 0")
+        if self.purchase_price is not None and self.purchase_price < 0:
+            raise ValueError("purchase_price must be >= 0")
+        if self.purchase_price_per_base is not None and self.purchase_price_per_base < 0:
+            raise ValueError("purchase_price_per_base must be >= 0")
         super().save(*args, **kwargs)
 

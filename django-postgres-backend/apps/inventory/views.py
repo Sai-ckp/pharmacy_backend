@@ -1,36 +1,23 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import status, permissions, viewsets
+from rest_framework import status, permissions, viewsets, serializers
 from drf_spectacular.utils import extend_schema, OpenApiTypes, OpenApiParameter, OpenApiExample
 from django.db.models import Q, Sum, F
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
-from apps.catalog.models import BatchLot, ProductCategory
-from .services import stock_on_hand, write_movement, low_stock, near_expiry, inventory_stats, stock_summary
+from apps.catalog.models import BatchLot, ProductCategory, Product
+from .services import stock_on_hand, write_movement, low_stock, near_expiry, inventory_stats, stock_summary, stock_status_for_quantity
 from .models import RackLocation, InventoryMovement
-from .serializers import RackLocationSerializer
+from .serializers import (
+    RackLocationSerializer,
+    AddMedicineRequestSerializer,
+    AddMedicineResponseSerializer,
+)
 from apps.settingsx.services import get_setting
 from django.db import transaction
 from apps.inventory.models import BatchStock
 from apps.settingsx.utils import get_stock_thresholds
-
-def _parse_date(value):
-    """
-    Accepts either a date, or a string in DD-MM-YYYY or YYYY-MM-DD,
-    returns a date object or None. Raises ValueError on invalid strings.
-    """
-    if value in (None, ""):
-        return None
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        for fmt in ("%d-%m-%Y", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(value, fmt).date()
-            except ValueError:
-                continue
-    raise ValueError(f"Invalid date format: {value!r}")
 
 
 class HealthView(APIView):
@@ -258,117 +245,63 @@ class AddMedicineView(APIView):
     permission_classes = [permissions.IsAdminUser]
     @extend_schema(
         tags=["Inventory"],
-        summary="Add new medicine (product + batch + opening stock) in one call (Admin)",
-        description="Optionally pass purchase_price (per pack) to record in audit meta; for costing use GRN flow.",
-        request=OpenApiTypes.OBJECT,
-        responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT},
+        summary="Add new medicine (master + first batch) in one call (Admin)",
+        description="Creates/updates medicine master, opening batch, and inventory movement with base unit conversion.",
+        request=AddMedicineRequestSerializer,
+        responses={201: AddMedicineResponseSerializer, 400: OpenApiTypes.OBJECT},
         examples=[
             OpenApiExample(
                 "Add Medicine",
                 value={
                     "location_id": 1,
-                    "product": {
-                        "code": "PARA500", "name": "Paracetamol 500mg", "mrp": "5.00",
-                        "base_unit": "TAB", "pack_unit": "STRIP", "units_per_pack": "10.000"
+                    "medicine": {
+                        "name": "Paracetamol 500mg",
+                        "generic_name": "Acetaminophen",
+                        "category": 2,
+                        "form": 1,
+                        "strength": "500 mg",
+                        "base_uom": 5,
+                        "selling_uom": 7,
+                        "rack_location": 3,
+                        "tablets_per_strip": 10,
+                        "strips_per_box": 5,
+                        "gst_percent": "5.00",
+                        "reorder_level": 50,
+                        "mrp": "35.00",
+                        "description": "Pain reliever",
+                        "storage_instructions": "Keep in a cool, dry place"
                     },
-                    "batch": {"batch_no": "BTH-2024-078", "expiry_date": "2025-12-20"},
-                    "opening_qty_packs": "200",
-                    "purchase_price": "4.50"
+                    "batch": {
+                        "batch_number": "BTH-2024-078",
+                        "mfg_date": "2024-06-01",
+                        "expiry_date": "2026-05-31",
+                        "quantity": 5,
+                        "quantity_uom": 8,
+                        "purchase_price": "350.00"
+                    }
                 },
             )
         ],
     )
     @transaction.atomic
     def post(self, request):
-        from apps.catalog.models import Product, BatchLot
-        from apps.catalog.services import packs_to_base
-        from decimal import Decimal
+        serializer = AddMedicineRequestSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
 
-        product_data = request.data.get("product") or {}
-        batch_data = request.data.get("batch") or {}
-        # location_id = request.data.get("location_id")
-        location_id = request.data.get("location_id") or request.user.profile.location_id
-        opening_qty_base = request.data.get("opening_qty_base")
-        opening_qty_packs = request.data.get("opening_qty_packs") or request.data.get("quantity")
-        purchase_price = request.data.get("purchase_price") or request.data.get("unit_cost") or request.data.get("purchase_price_pack")
-
+        location_id = self._resolve_location_id(request, payload.get("location_id"))
         if not location_id:
-            return Response({"detail": "location_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            raise serializers.ValidationError({"location_id": "location_id is required"})
 
-        # Resolve or create product
-        product_id = product_data.get("id")
-        product: Product | None = None
-        if product_id:
-            product = Product.objects.filter(id=product_id).first()
-        elif product_data.get("code"):
-            product = Product.objects.filter(code=product_data.get("code")).first()
-        if not product:
-            required = ["name", "base_unit", "pack_unit", "units_per_pack", "mrp"]
-            missing = [f for f in required if not product_data.get(f)]
-            if missing:
-                return Response({"detail": f"Missing product fields: {', '.join(missing)}"}, status=status.HTTP_400_BAD_REQUEST)
-            product = Product.objects.create(
-                code=product_data.get("code"),
-                name=product_data.get("name"),
-                generic_name=product_data.get("generic_name", ""),
-                dosage_strength=product_data.get("dosage_strength", ""),
-                hsn=product_data.get("hsn", ""),
-                schedule=product_data.get("schedule", Product.Schedule.OTC),
-                category_id=product_data.get("category") or product_data.get("category_id"),
-                pack_size=product_data.get("pack_size", ""),
-                manufacturer=product_data.get("manufacturer", ""),
-                mrp=Decimal(str(product_data.get("mrp"))),
-                base_unit=product_data.get("base_unit"),
-                pack_unit=product_data.get("pack_unit"),
-                units_per_pack=Decimal(str(product_data.get("units_per_pack"))),
-                base_unit_step=Decimal(str(product_data.get("base_unit_step") or "1.000")),
-                gst_percent=Decimal(str(product_data.get("gst_percent") or "0")),
-                reorder_level=Decimal(str(product_data.get("reorder_level") or "0")),
-                description=product_data.get("description", ""),
-                storage_instructions=product_data.get("storage_instructions", ""),
-                preferred_vendor_id=product_data.get("preferred_vendor") or product_data.get("preferred_vendor_id") or request.data.get("vendor_id"),
-                is_sensitive=bool(product_data.get("is_sensitive", False)),
-                is_active=True,
-            )
+        medicine_payload = payload["medicine"]
+        batch_payload = payload["batch"]
 
-        # Create or upsert batch
-        if not batch_data.get("batch_no"):
-            return Response({"detail": "batch.batch_no is required"}, status=status.HTTP_400_BAD_REQUEST)
-        # Parse dates safely (support DD-MM-YYYY and YYYY-MM-DD)
-        try:
-            mfg_parsed = _parse_date(batch_data.get("mfg_date"))
-            expiry_parsed = _parse_date(batch_data.get("expiry_date"))
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-        batch, _ = BatchLot.objects.get_or_create(
-            product=product,
-            batch_no=batch_data.get("batch_no"),
-            defaults={
-                "mfg_date": mfg_parsed,
-                "expiry_date": expiry_parsed,
-                "status": BatchLot.Status.ACTIVE,
-            },
-        )
-        # Fill missing attributes if provided
-        changed = False
-        if mfg_parsed and not batch.mfg_date:
-            batch.mfg_date = mfg_parsed; changed = True
-        if expiry_parsed and not batch.expiry_date:
-            batch.expiry_date = expiry_parsed; changed = True
-        if batch_data.get("rack_no") and not batch.rack_no:
-            batch.rack_no = batch_data.get("rack_no"); changed = True
-        if changed:
-            batch.save()
-
-        # Determine opening qty in base units
-        qty_base = Decimal("0.000")
-        if opening_qty_base is not None and str(opening_qty_base) != "":
-            qty_base = Decimal(str(opening_qty_base))
-        elif opening_qty_packs is not None and str(opening_qty_packs) != "":
-            qty_base = packs_to_base(product.id, Decimal(str(opening_qty_packs)))
+        product = self._upsert_product(medicine_payload)
+        batch = self._create_batch(product, batch_payload)
+        qty_base = Decimal(batch_payload["quantity_base"])
 
         movement_id = None
-        if qty_base and qty_base > 0:
+        if qty_base > 0:
             movement_id = write_movement(
                 location_id=int(location_id),
                 batch_lot_id=batch.id,
@@ -378,39 +311,140 @@ class AddMedicineView(APIView):
                 actor=request.user if request.user.is_authenticated else None,
             )
 
-        # Audit with extra meta like purchase_price
-        try:
-            from apps.governance.services import audit
-            meta = {
-                "purchase_price_pack": str(purchase_price) if purchase_price is not None else None,
-                "opening_qty_base": f"{qty_base:.3f}",
-            }
-            audit(
-                request.user if request.user.is_authenticated else None,
-                table="inventory_add_medicine",
-                row_id=movement_id or batch.id,
-                action="CREATE",
-                before=None,
-                after={
-                    "product_id": product.id,
-                    "batch_lot_id": batch.id,
-                    "location_id": int(location_id),
-                },
-                meta=meta,
-            )
-        except Exception:
-            pass
+        current_stock = stock_on_hand(int(location_id), batch.id)
+        stock_state = stock_status_for_quantity(current_stock, product.reorder_level)
 
-        return Response(
-            {
-                "product_id": product.id,
-                "batch_lot_id": batch.id,
+        response_payload = {
+            "medicine": self._serialize_product(product),
+            "batch": self._serialize_batch(batch, current_stock),
+            "inventory": {
+                "location_id": int(location_id),
                 "movement_id": movement_id,
-                "qty_base_written": f"{qty_base:.3f}",
-                "purchase_price_pack": str(purchase_price) if purchase_price is not None else None,
+                "stock_status": stock_state,
+                "stock_on_hand_base": f"{current_stock:.3f}",
             },
-            status=status.HTTP_201_CREATED,
+        }
+        response_serializer = AddMedicineResponseSerializer(response_payload)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+    def _resolve_location_id(self, request, location):
+        if location:
+            try:
+                return int(location)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({"location_id": "location_id must be an integer"})
+        profile = getattr(request.user, "profile", None)
+        if profile and getattr(profile, "location_id", None):
+            return profile.location_id
+        return None
+
+    def _upsert_product(self, payload: dict) -> Product:
+        product_id = payload.get("id")
+        if product_id:
+            product = Product.objects.select_for_update().filter(id=product_id).first()
+            if not product:
+                raise serializers.ValidationError({"id": "Medicine not found."})
+        else:
+            product = Product()
+        if not getattr(product, "id", None):
+            product.code = product.code or self._generate_code()
+        product.name = payload["name"]
+        product.generic_name = payload.get("generic_name") or ""
+        product.dosage_strength = payload.get("strength") or ""
+        product.category = payload.get("category")
+        product.medicine_form = payload.get("medicine_form")
+        product.base_uom = payload.get("base_uom")
+        product.selling_uom = payload.get("selling_uom")
+        product.units_per_pack = payload.get("units_per_pack")
+        product.base_unit_step = Decimal("1.000")
+        product.mrp = payload.get("mrp")
+        product.gst_percent = payload.get("gst_percent")
+        product.reorder_level = payload.get("reorder_level")
+        product.description = payload.get("description") or ""
+        product.storage_instructions = payload.get("storage_instructions") or ""
+        product.tablets_per_strip = payload.get("tablets_per_strip")
+        product.strips_per_box = payload.get("strips_per_box")
+        product.rack_location = payload.get("rack_location")
+        product.is_active = True
+        product.save()
+        return product
+
+    def _create_batch(self, product: Product, payload: dict) -> BatchLot:
+        batch_no = payload["batch_number"]
+        if BatchLot.objects.filter(product=product, batch_no=batch_no).exists():
+            raise serializers.ValidationError({"batch_number": "Batch already exists for this medicine."})
+
+        quantity = Decimal(str(payload["quantity"]))
+        qty_base = Decimal(payload["quantity_base"])
+        conversion_factor = Decimal(payload["conversion_factor"])
+        purchase_price = Decimal(str(payload["purchase_price"]))
+        price_per_base = Decimal("0.000000")
+        if conversion_factor > 0:
+            price_per_base = purchase_price / conversion_factor
+
+        rack_code = product.rack_location.name if product.rack_location else ""
+        batch = BatchLot.objects.create(
+            product=product,
+            batch_no=batch_no,
+            mfg_date=payload.get("mfg_date"),
+            expiry_date=payload.get("expiry_date"),
+            status=BatchLot.Status.ACTIVE,
+            rack_no=rack_code,
+            quantity_uom=payload.get("quantity_uom"),
+            initial_quantity=quantity,
+            initial_quantity_base=qty_base,
+            purchase_price=purchase_price,
+            purchase_price_per_base=price_per_base,
         )
+        return batch
+
+    def _generate_code(self) -> str:
+        last = Product.objects.order_by("-id").first()
+        next_id = (last.id + 1) if last else 1
+        return f"PRD-{next_id:05d}"
+
+    @staticmethod
+    def _ref(obj):
+        if not obj:
+            return None
+        return {"id": obj.id, "name": getattr(obj, "name", "")}
+
+    def _serialize_product(self, product: Product) -> dict:
+        return {
+            "id": product.id,
+            "code": product.code,
+            "name": product.name,
+            "generic_name": product.generic_name,
+            "strength": product.dosage_strength,
+            "category": self._ref(product.category),
+            "form": self._ref(product.medicine_form),
+            "base_uom": self._ref(product.base_uom),
+            "selling_uom": self._ref(product.selling_uom),
+            "rack_location": self._ref(product.rack_location),
+            "gst_percent": str(product.gst_percent or Decimal("0")),
+            "description": product.description or "",
+            "storage_instructions": product.storage_instructions or "",
+            "reorder_level": str(product.reorder_level or Decimal("0.000")),
+            "tablets_per_strip": product.tablets_per_strip,
+            "strips_per_box": product.strips_per_box,
+            "mrp": str(product.mrp or Decimal("0.00")),
+            "status": "ACTIVE" if product.is_active else "INACTIVE",
+        }
+
+    def _serialize_batch(self, batch: BatchLot, stock_base: Decimal) -> dict:
+        return {
+            "id": batch.id,
+            "batch_number": batch.batch_no,
+            "status": batch.status,
+            "mfg_date": batch.mfg_date,
+            "expiry_date": batch.expiry_date,
+            "quantity": f"{batch.initial_quantity:.3f}",
+            "quantity_uom": self._ref(batch.quantity_uom),
+            "base_quantity": f"{batch.initial_quantity_base:.3f}",
+            "purchase_price": f"{batch.purchase_price:.2f}",
+            "purchase_price_per_base": f"{batch.purchase_price_per_base:.6f}",
+            "current_stock_base": f"{stock_base:.3f}",
+        }
 
 
 class MedicinesListView(APIView):

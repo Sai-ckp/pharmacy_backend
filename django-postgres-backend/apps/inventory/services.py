@@ -3,6 +3,7 @@ from datetime import date as _date, timedelta
 
 from django.db import transaction
 from django.db.models import Sum, F
+from rest_framework.exceptions import ValidationError
 
 from .models import InventoryMovement
 from apps.catalog.models import BatchLot, Product
@@ -34,9 +35,66 @@ def is_batch_sellable(batch_lot_id: int, on_date: _date | None = None) -> tuple[
     return True, "OK"
 
 
-from decimal import Decimal
-from django.db import transaction
-from rest_framework.exceptions import ValidationError
+STRIP_NAMES = {"STRIP", "STRIPS"}
+BOX_NAMES = {"BOX", "BOXES", "CARTON", "CARTONS"}
+
+
+def convert_quantity_to_base(
+    *,
+    quantity: Decimal,
+    base_uom,
+    selling_uom,
+    quantity_uom,
+    units_per_pack: Decimal,
+    tablets_per_strip: int | None = None,
+    strips_per_box: int | None = None,
+) -> tuple[Decimal, Decimal]:
+    """
+    Convert quantity expressed in quantity_uom into base units.
+    Returns (base_quantity, factor_used).
+    """
+    if quantity < 0:
+        raise ValidationError({"quantity": "Quantity must be >= 0"})
+    if not quantity_uom:
+        raise ValidationError({"quantity_uom": "Quantity unit is required"})
+    if not base_uom:
+        raise ValidationError({"base_uom": "Base unit is required"})
+    if not selling_uom:
+        raise ValidationError({"selling_uom": "Selling unit is required"})
+
+    q_uom_name = (quantity_uom.name or "").strip().upper()
+    base_name = (base_uom.name or "").strip().upper()
+
+    if quantity_uom.id == base_uom.id:
+        factor = Decimal("1")
+    elif quantity_uom.id == selling_uom.id:
+        factor = units_per_pack
+    elif base_name in {"TAB", "TABLET", "CAP", "CAPSULE"} and q_uom_name in STRIP_NAMES:
+        if not tablets_per_strip:
+            raise ValidationError({"tablets_per_strip": "tablets_per_strip is required for STRIP quantities"})
+        factor = Decimal(tablets_per_strip)
+    elif base_name in {"TAB", "TABLET", "CAP", "CAPSULE"} and q_uom_name in BOX_NAMES:
+        if not tablets_per_strip:
+            raise ValidationError({"tablets_per_strip": "tablets_per_strip is required for BOX quantities"})
+        if not strips_per_box:
+            raise ValidationError({"strips_per_box": "strips_per_box is required for BOX quantities"})
+        factor = Decimal(tablets_per_strip) * Decimal(strips_per_box)
+    else:
+        raise ValidationError({
+            "quantity_uom": f"Cannot convert from {quantity_uom} to base unit {base_uom}. Provide units_per_pack."
+        })
+
+    if factor <= 0:
+        raise ValidationError({"units_per_pack": "Conversion factor must be > 0"})
+    return Decimal(quantity) * factor, factor
+
+
+def stock_status_for_quantity(qty_base: Decimal, reorder_level: Decimal | None) -> str:
+    if qty_base is None or qty_base <= 0:
+        return "OUT_OF_STOCK"
+    if reorder_level is not None and qty_base <= reorder_level:
+        return "LOW_STOCK"
+    return "IN_STOCK"
 
 @transaction.atomic
 def write_movement(
