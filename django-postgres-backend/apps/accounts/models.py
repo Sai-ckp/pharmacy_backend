@@ -73,3 +73,18 @@ class PasswordResetOTP(models.Model):
     def is_expired(self, ttl_minutes=10):
         return self.created_at < timezone.now() - timezone.timedelta(minutes=ttl_minutes)
 
+
+class PasswordResetOTP(models.Model):
+    email = models.EmailField()
+    otp_hash = models.CharField(max_length=255)
+    created_at = models.DateTimeField(default=timezone.now)
+    is_used = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["email", "created_at"]),
+        ]
+
+    def is_expired(self, ttl_minutes=10):
+        return self.created_at < timezone.now() - timezone.timedelta(minutes=ttl_minutes)
+
