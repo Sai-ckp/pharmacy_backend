@@ -89,3 +89,30 @@ class PaymentTerm(models.Model):
     def __str__(self) -> str:
         return self.name
 
+
+class NotificationSettings(models.Model):
+    enable_email = models.BooleanField(default=False)
+    low_stock_alerts = models.BooleanField(default=False)
+    expiry_alerts = models.BooleanField(default=False)
+    daily_reports = models.BooleanField(default=False)
+    notification_email = models.EmailField(blank=True, null=True)
+    enable_sms = models.BooleanField(default=False)
+    sms_phone = models.CharField(max_length=32, blank=True, null=True)
+    smtp_host = models.CharField(max_length=200, blank=True, null=True)
+    smtp_port = models.IntegerField(default=587)
+    smtp_username = models.CharField(max_length=200, blank=True, null=True)
+    smtp_password = models.CharField(max_length=200, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class TaxBillingSettings(models.Model):
+    gst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    cgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    sgst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    calc_method = models.CharField(max_length=16, default="INCLUSIVE")
+    invoice_prefix = models.CharField(max_length=16, default="INV-")
+    invoice_start = models.IntegerField(default=1)
+    invoice_template = models.CharField(max_length=64, default="STANDARD")
+    invoice_footer = models.CharField(max_length=512, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+

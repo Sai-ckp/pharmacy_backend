@@ -1,5 +1,13 @@
 from rest_framework import serializers
-from .models import SettingKV, BusinessProfile, DocCounter, PaymentMethod, PaymentTerm
+from .models import (
+    SettingKV,
+    BusinessProfile,
+    DocCounter,
+    PaymentMethod,
+    PaymentTerm,
+    NotificationSettings,
+    TaxBillingSettings,
+)
 from rest_framework import status
 from rest_framework.exceptions import APIException
 
@@ -73,5 +81,24 @@ class PaymentTermSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise Conflict()
         attrs["name"] = name
+        return attrs
+
+
+class NotificationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationSettings
+        fields = "__all__"
+
+
+class TaxBillingSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaxBillingSettings
+        fields = "__all__"
+
+    def validate(self, attrs):
+        for fld in ("gst_rate", "cgst_rate", "sgst_rate"):
+            val = attrs.get(fld)
+            if val is not None and val < 0:
+                raise serializers.ValidationError({fld: "Must be >= 0"})
         return attrs
 

@@ -5,9 +5,9 @@ from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParamete
 from .models import SettingKV, BusinessProfile, DocCounter
 from .serializers import (
     SettingsSerializer, BusinessProfileSerializer, DocCounterSerializer,
-    PaymentMethodSerializer, PaymentTermSerializer,
+    PaymentMethodSerializer, PaymentTermSerializer, NotificationSettingsSerializer, TaxBillingSettingsSerializer,
 )
-from .models import PaymentMethod, PaymentTerm
+from .models import PaymentMethod, PaymentTerm, NotificationSettings, TaxBillingSettings
 from rest_framework import viewsets
 from . import services
 from .services_backup import restore_backup, create_backup
@@ -153,6 +153,36 @@ class SettingsGroupSaveView(APIView):
 class DocCounterViewSet(viewsets.ModelViewSet):
     queryset = DocCounter.objects.all()
     serializer_class = DocCounterSerializer
+
+
+class NotificationSettingsView(APIView):
+    @extend_schema(tags=["Settings"], summary="Get notification settings", responses={200: NotificationSettingsSerializer})
+    def get(self, request):
+        obj, _ = NotificationSettings.objects.get_or_create(id=1)
+        return Response(NotificationSettingsSerializer(obj).data)
+
+    @extend_schema(tags=["Settings"], summary="Update notification settings", request=NotificationSettingsSerializer, responses={200: NotificationSettingsSerializer})
+    def put(self, request):
+        obj, _ = NotificationSettings.objects.get_or_create(id=1)
+        ser = NotificationSettingsSerializer(obj, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
+
+
+class TaxBillingSettingsView(APIView):
+    @extend_schema(tags=["Settings"], summary="Get tax & billing settings", responses={200: TaxBillingSettingsSerializer})
+    def get(self, request):
+        obj, _ = TaxBillingSettings.objects.get_or_create(id=1)
+        return Response(TaxBillingSettingsSerializer(obj).data)
+
+    @extend_schema(tags=["Settings"], summary="Update tax & billing settings", request=TaxBillingSettingsSerializer, responses={200: TaxBillingSettingsSerializer})
+    def put(self, request):
+        obj, _ = TaxBillingSettings.objects.get_or_create(id=1)
+        ser = TaxBillingSettingsSerializer(obj, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
 
 
 class KVDetailView(APIView):
