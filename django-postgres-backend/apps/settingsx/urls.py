@@ -4,7 +4,7 @@ from .views import (
     HealthView, SettingsListCreateView, SettingsDetailView, BusinessProfileView,
     SettingsGroupView, SettingsGroupSaveView, DocCounterViewSet, KVDetailView, DocCounterNextView,
     PaymentMethodViewSet, PaymentTermViewSet, BackupRestoreView, BackupCreateView,
-    NotificationSettingsView, TaxBillingSettingsView,
+    NotificationSettingsView, TaxBillingSettingsView, AlertThresholdsView, NotificationTestView,
 )
 
 
@@ -25,7 +25,9 @@ urlpatterns = [
     path('backup/restore/', BackupRestoreView.as_view(), name='backup-restore'),
     path('backup/create/', BackupCreateView.as_view(), name='backup-create'),
     path('notifications/', NotificationSettingsView.as_view(), name='settings-notifications'),
+    path('notifications/test/', NotificationTestView.as_view(), name='settings-notifications-test'),
     path('tax-billing/', TaxBillingSettingsView.as_view(), name='settings-tax-billing'),
+    path('alert-thresholds/', AlertThresholdsView.as_view(), name='settings-alert-thresholds'),
     path('app/', SettingsGroupView.as_view(), name='settings-group'),
     path('app/save', SettingsGroupSaveView.as_view(), name='settings-group-save'),
     path('', include(router.urls)),

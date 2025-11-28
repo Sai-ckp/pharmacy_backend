@@ -116,3 +116,10 @@ class TaxBillingSettings(models.Model):
     invoice_footer = models.CharField(max_length=512, blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+
+class AlertThresholds(models.Model):
+    critical_expiry_days = models.PositiveIntegerField(default=30)
+    warning_expiry_days = models.PositiveIntegerField(default=60)
+    low_stock_default = models.PositiveIntegerField(default=50)
+    updated_at = models.DateTimeField(auto_now=True)
+

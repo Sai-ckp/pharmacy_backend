@@ -1,0 +1,20 @@
+from django.test import TestCase
+from rest_framework.test import APIClient
+from rest_framework import status
+
+from apps.settingsx.models import AlertThresholds
+
+
+class AlertThresholdsTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_get_and_update_thresholds(self):
+        resp = self.client.get("/api/v1/settings/alert-thresholds/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("critical_expiry_days", resp.data)
+
+        resp_put = self.client.put("/api/v1/settings/alert-thresholds/", {"critical_expiry_days": 20}, format="json")
+        self.assertEqual(resp_put.status_code, status.HTTP_200_OK)
+        thr = AlertThresholds.objects.first()
+        self.assertEqual(thr.critical_expiry_days, 20)

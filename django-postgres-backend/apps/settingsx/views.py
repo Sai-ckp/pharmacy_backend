@@ -5,9 +5,9 @@ from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParamete
 from .models import SettingKV, BusinessProfile, DocCounter
 from .serializers import (
     SettingsSerializer, BusinessProfileSerializer, DocCounterSerializer,
-    PaymentMethodSerializer, PaymentTermSerializer, NotificationSettingsSerializer, TaxBillingSettingsSerializer,
+    PaymentMethodSerializer, PaymentTermSerializer, NotificationSettingsSerializer, TaxBillingSettingsSerializer, AlertThresholdsSerializer,
 )
-from .models import PaymentMethod, PaymentTerm, NotificationSettings, TaxBillingSettings
+from .models import PaymentMethod, PaymentTerm, NotificationSettings, TaxBillingSettings, AlertThresholds
 from rest_framework import viewsets
 from . import services
 from .services_backup import restore_backup, create_backup
@@ -183,6 +183,30 @@ class TaxBillingSettingsView(APIView):
         ser.is_valid(raise_exception=True)
         ser.save()
         return Response(ser.data)
+
+
+class AlertThresholdsView(APIView):
+    @extend_schema(tags=["Settings"], summary="Get alert thresholds", responses={200: AlertThresholdsSerializer})
+    def get(self, request):
+        obj, _ = AlertThresholds.objects.get_or_create(id=1)
+        return Response(AlertThresholdsSerializer(obj).data)
+
+    @extend_schema(tags=["Settings"], summary="Update alert thresholds", request=AlertThresholdsSerializer, responses={200: AlertThresholdsSerializer})
+    def put(self, request):
+        obj, _ = AlertThresholds.objects.get_or_create(id=1)
+        ser = AlertThresholdsSerializer(obj, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        return Response(ser.data)
+
+
+class NotificationTestView(APIView):
+    @extend_schema(tags=["Settings"], summary="Test SMTP connection", responses={200: OpenApiTypes.OBJECT})
+    def post(self, request):
+        settings_obj, _ = NotificationSettings.objects.get_or_create(id=1)
+        # Minimal stub: return success if host/port set
+        ok = bool(settings_obj.smtp_host and settings_obj.smtp_port)
+        return Response({"ok": ok, "host": settings_obj.smtp_host, "port": settings_obj.smtp_port})
 
 
 class KVDetailView(APIView):

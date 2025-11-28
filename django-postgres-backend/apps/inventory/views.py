@@ -225,8 +225,14 @@ class ExpiryAlertsView(APIView):
         location_id = request.query_params.get("location_id")
         bucket = (request.query_params.get("bucket") or "all").lower()
 
-        crit_days = int(get_setting("ALERT_EXPIRY_CRITICAL_DAYS", "30") or 30)
-        warn_days = int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
+        try:
+            from apps.settingsx.models import AlertThresholds
+            thr = AlertThresholds.objects.first()
+            crit_days = thr.critical_expiry_days if thr else int(get_setting("ALERT_EXPIRY_CRITICAL_DAYS", "30") or 30)
+            warn_days = thr.warning_expiry_days if thr else int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
+        except Exception:
+            crit_days = int(get_setting("ALERT_EXPIRY_CRITICAL_DAYS", "30") or 30)
+            warn_days = int(get_setting("ALERT_EXPIRY_WARNING_DAYS", "60") or 60)
         rows = near_expiry(days=warn_days, location_id=location_id)
         today = date.today()
 

@@ -7,6 +7,7 @@ from .models import (
     PaymentTerm,
     NotificationSettings,
     TaxBillingSettings,
+    AlertThresholds,
 )
 from rest_framework import status
 from rest_framework.exceptions import APIException
@@ -98,7 +99,13 @@ class TaxBillingSettingsSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         for fld in ("gst_rate", "cgst_rate", "sgst_rate"):
             val = attrs.get(fld)
-            if val is not None and val < 0:
-                raise serializers.ValidationError({fld: "Must be >= 0"})
+        if val is not None and val < 0:
+            raise serializers.ValidationError({fld: "Must be >= 0"})
         return attrs
+
+
+class AlertThresholdsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AlertThresholds
+        fields = "__all__"
 
