@@ -34,6 +34,10 @@ def is_batch_sellable(batch_lot_id: int, on_date: _date | None = None) -> tuple[
     return True, "OK"
 
 
+from decimal import Decimal
+from django.db import transaction
+from rest_framework.exceptions import ValidationError
+
 @transaction.atomic
 def write_movement(
     location_id: int,
@@ -44,28 +48,59 @@ def write_movement(
     ref_doc: tuple[str, int],
     actor=None,
 ) -> int:
-    location = Location.objects.select_for_update().get(id=location_id)
-    batch = BatchLot.objects.select_for_update().get(id=batch_lot_id)
 
+    # === Validate location ===
+    try:
+        location = Location.objects.select_for_update().get(id=location_id)
+    except Location.DoesNotExist:
+        raise ValidationError({
+            "location_id": f"Invalid location_id '{location_id}'. Location does not exist."
+        })
+
+    # === Validate batch lot ===
+    try:
+        batch = BatchLot.objects.select_for_update().get(id=batch_lot_id)
+    except BatchLot.DoesNotExist:
+        raise ValidationError({
+            "batch_lot_id": f"Invalid batch_lot_id '{batch_lot_id}'. Batch lot does not exist."
+        })
+
+    # === Negative stock logic ===
     allow_negative = (get_setting("ALLOW_NEGATIVE_STOCK", "false") or "false").lower() == "true"
+
     if not allow_negative and qty_change_base < 0:
         current = stock_on_hand(location_id, batch_lot_id)
         if current + Decimal(qty_change_base) < 0:
-            raise ValueError("Insufficient stock; negative not allowed")
+            raise ValidationError({
+                "quantity": "Insufficient stock; negative stock not allowed."
+            })
 
+    # === Validate ref_doc structure ===
+    if not isinstance(ref_doc, tuple) or len(ref_doc) != 2:
+        raise ValidationError({
+            "ref_doc": "ref_doc must be a tuple: (doc_type: str, doc_id: int)"
+        })
+
+    doc_type, doc_id = ref_doc
+    if doc_id is not None:
+        try:
+            doc_id = int(doc_id)
+        except ValueError:
+            raise ValidationError({"ref_doc_id": "ref_doc_id must be an integer"})
+
+    # === Create inventory movement ===
     mov = InventoryMovement.objects.create(
         location=location,
         batch_lot=batch,
         qty_change_base=Decimal(qty_change_base),
         reason=reason,
-        ref_doc_type=ref_doc[0],
-        ref_doc_id=int(ref_doc[1]) if ref_doc and ref_doc[1] is not None else None,
+        ref_doc_type=doc_type,
+        ref_doc_id=doc_id,
     )
 
-    # Audit
+    # === Audit logging (safe) ===
     try:
         from apps.governance.services import audit
-
         audit(
             actor,
             table="inventory_inventorymovement",
