@@ -499,69 +499,6 @@ class PurchasesMonthlyStatsView(APIView):
         return Response(series)
 
 
-class PurchasePDFImportView(APIView):
-
-    def post(self, request):
-        vendor_id = request.data.get("vendor_id")
-        location_id = request.data.get("location_id")
-        file = request.FILES.get("file")
-
-        if not file:
-            return Response({"detail": "No PDF file uploaded"}, status=400)
-
-        # Save file temporarily
-        file_path = default_storage.save("temp/" + file.name, file)
-
-        # Extract items
-        items = extract_purchase_items_from_pdf(file_path)
-        if not items:
-            return Response({"detail": "Could not extract any items from PDF"}, status=400)
-
-        with transaction.atomic():
-
-            # Create Purchase record
-            purchase = Purchase.objects.create(
-                vendor_id=vendor_id,
-                location_id=location_id,
-                invoice_date=None,
-                gross_total=0,
-                net_total=0
-            )
-
-            total_net = 0
-
-            for item in items:
-
-                # Match product (by code OR name)
-                product = Product.objects.filter(code=item["product_code"]).first()
-                if not product:
-                    product = Product.objects.filter(name__icontains=item["name"]).first()
-
-                if not product:
-                    continue  # Skip unknown product
-
-                PurchaseLine.objects.create(
-                    purchase=purchase,
-                    product=product,
-                    batch_no=item["batch_no"],
-                    expiry_date=item["expiry"],
-                    qty_packs=item["qty"],
-                    unit_cost=item["cost"],
-                    mrp=item["mrp"]
-                )
-
-                total_net += item["net_value"]
-
-            # Update totals
-            purchase.net_total = total_net
-            purchase.gross_total = total_net
-            purchase.save()
-
-        return Response({
-            "message": "PDF imported successfully",
-            "purchase_id": purchase.id,
-            "items_count": len(items)
-        })
     
 class PurchasePDFImportView(APIView):
     """
