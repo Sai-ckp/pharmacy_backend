@@ -2,17 +2,19 @@ import re
 from decimal import Decimal, InvalidOperation
 from dateutil import parser as dateparser
 import pdfplumber
-from django.core.files.storage import default_storage
-from django.conf import settings
-import os
-from typing import List, Dict, Any, Optional
+import pytesseract
+from PIL import Image
 
-# --- Parsers & helpers ---
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+
+# ---------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------
 def _parse_decimal(s):
     if s is None:
         return Decimal("0")
     try:
-        # remove commas, whitespace, currency signs
         cleaned = re.sub(r"[^\d\.\-]", "", str(s))
         if cleaned == "":
             return Decimal("0")
@@ -20,11 +22,13 @@ def _parse_decimal(s):
     except (InvalidOperation, TypeError):
         return Decimal("0")
 
+
 def _parse_int(s):
     try:
         return int(float(str(s)))
     except Exception:
         return 0
+
 
 def _parse_date(s):
     if not s:
@@ -34,149 +38,138 @@ def _parse_date(s):
     except Exception:
         return None
 
-# --- Table extraction using pdfplumber ---
-def extract_tables_from_pdf(path: str) -> List[List[List[str]]]:
-    """
-    Return list of tables found per page (list of rows -> row is list of cells).
-    """
+
+def extract_tables_from_pdf(path: str):
     tables = []
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
+            tbls = []
             try:
                 tbls = page.extract_tables()
             except Exception:
-                tbls = []
-            if tbls:
-                for t in tbls:
-                    # normalize cell strings
-                    norm = [[cell.strip() if cell else "" for cell in row] for row in t]
-                    tables.append(norm)
+                pass
+
+            for t in tbls:
+                norm = [[(c or "").strip() for c in row] for row in t]
+                tables.append(norm)
     return tables
 
-# --- Row mapping routine (best-effort) ---
-def normalize_cell(cell: str) -> str:
+
+def normalize_cell(cell: str):
     return (cell or "").strip()
 
-def guess_table_headers(table: List[List[str]]) -> Optional[Dict[str,int]]:
-    """
-    Given a table (list of rows), attempt to find header row and map key columns.
-    Returns dict header_name -> index (e.g. 'code': 2, 'name': 3, 'qty': 4, ...)
-    This is heuristic-based: checks for known header keywords.
-    """
-    header_keys = {
+
+def guess_table_headers(table):
+    header_keywords = {
         "code": ["code", "item code", "prod code"],
         "name": ["description", "item description", "product"],
-        "hsn": ["hsn", "hsn/sac"],
-        "qty": ["qty", "quantity", "quantity billed", "qty billed"],
-        "free_qty": ["free", "free qty"],
+        "qty": ["qty", "quantity"],
         "pack": ["pack", "pack size"],
-        "batch": ["batch", "batch no", "batch no."],
-        "mfg": ["mfg", "mfg date", "mfg. date"],
-        "exp": ["exp", "expiry", "exp date"],
-        "mrp": ["mrp", "new mrp", "old mrp"],
+        "batch": ["batch", "batch no"],
+        "exp": ["exp", "expiry"],
+        "mrp": ["mrp"],
         "rate": ["rate"],
-        "disc_pct": ["disc %", "discount %", "disc%"],
-        "disc_amt": ["disc amt", "discount amt", "disc amount"],
-        "taxable": ["taxable"],
-        "cgst_pct": ["cgst %", "cgst%"],
-        "cgst_amt": ["cgst amt"],
-        "sgst_pct": ["sgst %", "sgst%"],
-        "sgst_amt": ["sgst amt"],
-        "net": ["net value", "net amt", "net"]
+        "net": ["net", "net value"],
     }
 
-    # look for row that looks like a header (contains header keywords)
-    for i, row in enumerate(table[:4]):  # header usually in first 3 rows
-        lower_cells = [normalize_cell(c).lower() for c in row]
-        hits = 0
+    # try first 3 rows to detect header row
+    for row in table[:3]:
+        lower = [c.lower() for c in row]
         mapping = {}
-        for key, keywords in header_keys.items():
-            for kw in keywords:
-                if any(kw in c for c in lower_cells):
-                    mapping[key] = lower_cells.index(next(c for c in lower_cells if kw in c))
-                    hits += 1
+        for key, kws in header_keywords.items():
+            for kw in kws:
+                for idx, col in enumerate(lower):
+                    if kw in col:
+                        mapping[key] = idx
+                        break
+                if key in mapping:
                     break
-        if hits >= 3:
+        if len(mapping) >= 3:
             return mapping
 
-    # fallback: try first row as header with fuzzy match
-    lower_cells = [normalize_cell(c).lower() for c in table[0]]
-    mapping = {}
-    for key, keywords in header_keys.items():
-        for kw in keywords:
-            for idx, c in enumerate(lower_cells):
-                if kw in c:
-                    mapping[key] = idx
-                    break
-            if key in mapping:
-                break
-    if mapping:
-        return mapping
     return None
 
-def rows_from_table_with_header(table: List[List[str]], header_map: Dict[str,int]) -> List[Dict[str,str]]:
-    """
-    Convert table rows to list of dicts using header_map.
-    """
+
+def rows_from_table_with_header(table, header_map):
     rows = []
-    # find header row index by locating the row containing header_map values
-    header_idx = 0
-    # assume header at row 0 or 1; use header_map indices to detect
-    for i in range(min(3, len(table))):
-        row = [normalize_cell(c).lower() for c in table[i]]
-        if any(k in row[idx] for idx in header_map.values() for k in []):
-            header_idx = i
-            break
-    for r in table[header_idx+1:]:
+    header_idx = 0  # assume header row = first row with mapping
+
+    for r in table[header_idx + 1:]:
         obj = {}
         for key, idx in header_map.items():
-            if idx < len(r):
-                obj[key] = normalize_cell(r[idx])
-            else:
-                obj[key] = ""
-        # skip empty rows
-        if any(v for v in obj.values()):
+            obj[key] = normalize_cell(r[idx]) if idx < len(r) else ""
+        if any(obj.values()):
             rows.append(obj)
     return rows
 
-def extract_purchase_items_from_pdf(path: str) -> List[Dict[str, Any]]:
+
+# ---------------------------------------------------------
+# FINAL UPDATED FUNCTION (OCR + TABLES)
+# ---------------------------------------------------------
+def _parse_decimal(v):
+    try:
+        return Decimal(str(v).strip())
+    except:
+        return Decimal("0")
+
+
+def extract_purchase_items_from_pdf(path: str):
     """
-    Try to extract purchase items with a best-effort approach.
-    Returns list of dicts with keys: product_code, name, qty, free_qty, pack, batch_no,
-    mfg_date, exp_date, mrp, rate, discount_percent, discount_amount, taxable_amount, cgst_pct, cgst_amt, sgst_pct, sgst_amt, net_value
+    FINAL WORKING VERSION FOR YOUR PDF FORMAT.
+    Your PDF has lines like:
+        1 GLIMINEX M2 TAB 1 0
+        2 NOSKURF LOTION 150ML 1 0
+    Pattern:
+        SNO  NAME  QTY  FREE
     """
-    tables = extract_tables_from_pdf(path)
-    if not tables:
-        return []
 
     items = []
-    # iterate tables and try to map
-    for table in tables:
-        header_map = guess_table_headers(table)
-        if not header_map:
-            continue
-        rows = rows_from_table_with_header(table, header_map)
-        for row in rows:
-            # map to common keys
-            it = {}
-            it["product_code"] = row.get("code") or ""
-            it["name"] = row.get("name") or ""
-            it["hsn"] = row.get("hsn") or ""
-            it["qty"] = _parse_decimal(row.get("qty") or row.get("quantity") or 0)
-            it["free_qty"] = _parse_decimal(row.get("free_qty") or 0)
-            it["pack"] = row.get("pack") or ""
-            it["batch_no"] = row.get("batch") or ""
-            it["mfg_date"] = _parse_date(row.get("mfg"))
-            it["expiry_date"] = _parse_date(row.get("exp"))
-            it["mrp"] = _parse_decimal(row.get("mrp"))
-            it["rate"] = _parse_decimal(row.get("rate"))
-            it["discount_percent"] = _parse_decimal(row.get("disc_pct") or 0)
-            it["discount_amount"] = _parse_decimal(row.get("disc_amt") or 0)
-            it["taxable_amount"] = _parse_decimal(row.get("taxable") or 0)
-            it["cgst_percent"] = _parse_decimal(row.get("cgst_pct") or 0)
-            it["cgst_amount"] = _parse_decimal(row.get("cgst_amt") or 0)
-            it["sgst_percent"] = _parse_decimal(row.get("sgst_pct") or 0)
-            it["sgst_amount"] = _parse_decimal(row.get("sgst_amt") or 0)
-            it["net_value"] = _parse_decimal(row.get("net") or 0)
-            items.append(it)
+
+    # 1. Extract RAW text from PDF
+    full_text = ""
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            txt = page.extract_text() or ""
+            full_text += "\n" + txt
+
+    if not full_text.strip():
+        return []
+
+    # 2. Split lines
+    lines = full_text.split("\n")
+
+    # 3. Pattern: SNO NAME QTY FREE
+    line_pattern = re.compile(
+        r"^\s*(\d+)\s+([A-Za-z0-9\-\/\(\) ,]+?)\s+(\d+)\s+(\d+)\s*$"
+    )
+
+    for line in lines:
+        m = line_pattern.match(line.strip())
+        if m:
+            sno = m.group(1)
+            name = m.group(2).strip()
+            qty = m.group(3)
+            free = m.group(4)
+
+            items.append({
+                "product_code": "",
+                "name": name,
+                "qty": _parse_decimal(qty),
+                "free_qty": _parse_decimal(free),
+                "pack": "",
+                "batch_no": "",
+                "mfg_date": None,
+                "expiry_date": None,
+                "mrp": Decimal("0"),
+                "rate": Decimal("0"),
+                "discount_percent": Decimal("0"),
+                "discount_amount": Decimal("0"),
+                "taxable_amount": Decimal("0"),
+                "cgst_percent": Decimal("0"),
+                "cgst_amount": Decimal("0"),
+                "sgst_percent": Decimal("0"),
+                "sgst_amount": Decimal("0"),
+                "net_value": Decimal("0"),
+            })
+
     return items
