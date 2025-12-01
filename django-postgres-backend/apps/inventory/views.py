@@ -22,6 +22,8 @@ from apps.settingsx.models import SettingKV
 
 
 class HealthView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         return Response({"ok": True})
 

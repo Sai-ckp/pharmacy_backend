@@ -1,6 +1,6 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import generics, viewsets, status
+from rest_framework import generics, viewsets, status, permissions
 from drf_spectacular.utils import extend_schema, OpenApiExample, OpenApiParameter, OpenApiTypes
 from .models import SettingKV, BusinessProfile, DocCounter
 from .serializers import (
@@ -15,6 +15,8 @@ from apps.governance.permissions import IsAdmin
 
 
 class HealthView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         return Response({"ok": True})
 

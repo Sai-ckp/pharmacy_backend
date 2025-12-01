@@ -1,6 +1,6 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework import viewsets
+from rest_framework import viewsets, permissions
 from django.db import models
 from drf_spectacular.utils import extend_schema, OpenApiTypes
 from django.utils import timezone
@@ -15,6 +15,8 @@ from apps.procurement.serializers import VendorSerializer
 
 
 class HealthView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         return Response({"ok": True})
 

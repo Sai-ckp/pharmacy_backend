@@ -1,4 +1,4 @@
-from rest_framework import generics, serializers, status
+from rest_framework import generics, serializers, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -8,6 +8,8 @@ from . import services
 
 
 class HealthView(APIView):
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
         return Response({"ok": True})
 
