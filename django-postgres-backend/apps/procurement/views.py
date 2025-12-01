@@ -5,7 +5,10 @@ from drf_spectacular.utils import extend_schema, OpenApiTypes, OpenApiExample, O
 from rest_framework.decorators import action
 from django.shortcuts import get_object_or_404
 from django.db import transaction
-from decimal import Decimal
+from django.utils import timezone
+from decimal import Decimal, InvalidOperation
+
+
 
 from .models import (
     Vendor, Purchase, PurchasePayment, PurchaseDocument, VendorReturn,
@@ -32,6 +35,9 @@ from .models import Purchase, PurchaseLine
 from apps.catalog.models import Product, BatchLot
 from apps.procurement.utils_pdf import extract_purchase_items_from_pdf
 from django.conf import settings
+from django.shortcuts import get_object_or_404
+import logging
+from apps.locations.models import Location
 
 
 class HealthView(APIView):
@@ -500,111 +506,185 @@ class PurchasesMonthlyStatsView(APIView):
 
 
     
+logger = logging.getLogger(__name__)
+
+
 class PurchasePDFImportView(APIView):
-    """
-    POST multipart/form-data:
-      - file: pdf file
-      - vendor_id: id
-      - location_id: id
-      - auto_receive: optional boolean (if present and true, create GRN + InventoryMovement)
-    """
 
     def post(self, request):
         file = request.FILES.get("file")
         vendor_id = request.data.get("vendor_id")
         location_id = request.data.get("location_id")
         auto_receive = request.data.get("auto_receive") in ["1", "true", "True", True]
+        po_number = next_doc_number("PO")
 
         if not file:
             return Response({"detail": "file is required"}, status=status.HTTP_400_BAD_REQUEST)
         if not vendor_id or not location_id:
             return Response({"detail": "vendor_id and location_id are required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Save temp file
-        tmp_path = default_storage.save("temp_pdfs/" + file.name, file)
-        tmp_full = default_storage.path(tmp_path) if hasattr(default_storage, 'path') else os.path.join(settings.MEDIA_ROOT, tmp_path)
+        tmp_path = None
+        try:
+            vendor = get_object_or_404(Vendor, pk=vendor_id)
+            location = get_object_or_404(Location, pk=location_id)
 
-        # Extract items
-        items = extract_purchase_items_from_pdf(tmp_full)
-        if not items:
-            # cleanup
-            try:
-                default_storage.delete(tmp_path)
-            except Exception:
-                pass
-            return Response({"detail": "no items extracted from PDF"}, status=status.HTTP_400_BAD_REQUEST)
+            # Save temp PDF
+            tmp_path = default_storage.save(f"temp_pdfs/{file.name}", file)
+            tmp_full_path = default_storage.path(tmp_path)
 
-        created_purchase = None
-        created_lines = 0
-        with transaction.atomic():
-            purchase = Purchase.objects.create(
-                vendor_id=vendor_id,
-                location_id=location_id,
-                vendor_invoice_no="",
-                invoice_date=None,
-                gross_total=0,
-                tax_total=0,
-                net_total=0,
-            )
+            # Extract items
+            items = extract_purchase_items_from_pdf(tmp_full_path)
+            if not items:
+                return Response({"detail": "no items extracted from PDF"}, status=status.HTTP_400_BAD_REQUEST)
 
-            total_net = 0
-            for it in items:
-                # find or create product
-                product = None
-                code = (it.get("product_code") or "").strip()
-                name = (it.get("name") or "").strip()
+            created_lines = 0
+            total_amount = Decimal("0.00")
 
-                if code:
-                    product = Product.objects.filter(code__iexact=code).first()
-                if product is None and name:
-                    product = Product.objects.filter(name__iexact=name).first()
-                if product is None and name:
-                    # fallback: try name contains
-                    product = Product.objects.filter(name__icontains=name.split()[0]).first()
-
-                if product is None:
-                    # create product with minimal required fields
-                    product = Product.objects.create(
-                        code=code or None,
-                        name=name or "UNKNOWN",
-                        mrp=it.get("mrp") or 0,
-                        base_unit="UNIT",
-                        pack_unit=it.get("pack") or "PACK",
-                        units_per_pack=1,
-                    )
-
-                # create PurchaseLine
-                pl = PurchaseLine.objects.create(
-                    purchase=purchase,
-                    product=product,
-                    batch_no=it.get("batch_no") or "",
-                    expiry_date=it.get("expiry_date"),
-                    qty_packs=int(it.get("qty") or 0),
-                    unit_cost=it.get("rate") or 0,
-                    mrp=it.get("mrp") or 0,
+            with transaction.atomic():
+                po = PurchaseOrder.objects.create(
+                    vendor=vendor,
+                    location=location,
+                    po_number=po_number,
+                    order_date=timezone.now().date(),
+                    status="OPEN",
+                    net_total=0,
                 )
 
-                # if you added new fields to PurchaseLine (discount, cgst, etc.) set them here if present
-                # example:
-                # pl.discount_percent = it.get("discount_percent"); pl.save()
+                for it in items:
+                    code = (it.get("product_code") or "").strip()
+                    name = (it.get("name") or "").strip()
 
-                total_net += float(it.get("net_value") or 0)
-                created_lines += 1
+                    # ----------------------------------------------------
+                    # PRODUCT LOOKUP
+                    # ----------------------------------------------------
+                    product = None
 
-            # update purchase totals
-            purchase.net_total = total_net
-            purchase.gross_total = total_net
-            purchase.save()
-            created_purchase = purchase
+                    if code:
+                        product = Product.objects.filter(code__iexact=code).first()
 
-        # cleanup temp file
-        try:
-            default_storage.delete(tmp_path)
-        except Exception:
-            pass
+                    if not product and name:
+                        product = Product.objects.filter(name__iexact=name).first()
 
-        return Response({
-            "message": "imported",
-            "purchase_id": created_purchase.id,
-            "lines_created": created_lines
-        }, status=status.HTTP_201_CREATED)    
+                    if not product and name:
+                        product = Product.objects.filter(name__icontains=name).first()
+
+                    if not product and name:
+                        first_token = name.split()[0]
+                        product = Product.objects.filter(name__icontains=first_token).first()
+
+                    # ----------------------------------------------------
+                    # PRODUCT CREATE IF NOT FOUND
+                    # ----------------------------------------------------
+                    if not product:
+
+                        base_unit_raw = it.get("base_unit") or ""
+                        pack_unit_raw = it.get("pack_unit") or ""
+                        units_per_pack_raw = it.get("units_per_pack") or 1
+
+                        # Resolve UOM safely
+                        base_uom = None
+                        selling_uom = None
+
+                        if base_unit_raw:
+                            base_uom = Uom.objects.filter(name__iexact=base_unit_raw).first()
+
+                        if pack_unit_raw:
+                            selling_uom = Uom.objects.filter(name__iexact=pack_unit_raw).first()
+
+                        product = Product.objects.create(
+                            code=code or None,
+                            name=name or "UNKNOWN",
+                            generic_name="",
+                            dosage_strength="",
+                            hsn="",
+                            schedule=Product.Schedule.OTC,
+                            category=None,
+                            medicine_form=None,
+                            base_uom=base_uom,
+                            selling_uom=selling_uom,
+                            pack_size="",
+                            manufacturer="",
+                            mrp=Decimal(it.get("mrp") or 0),
+
+                            # CHAR fields
+                            base_unit=base_unit_raw or "",
+                            pack_unit=pack_unit_raw or "",
+
+                            units_per_pack=Decimal(units_per_pack_raw),
+
+                            preferred_vendor=vendor,
+                        )
+
+                    # ----------------------------------------------------
+                    # PARSE NUMERIC FIELDS
+                    # ----------------------------------------------------
+                    qty_raw = it.get("qty") or 0
+                    rate_raw = it.get("rate") or 0
+                    net_value_raw = it.get("net_value") or 0
+
+                    try:
+                        qty_packs = int(float(qty_raw))
+                    except:
+                        qty_packs = 0
+
+                    try:
+                        expected_unit_cost = Decimal(str(rate_raw))
+                    except:
+                        expected_unit_cost = Decimal("0.00")
+
+                    try:
+                        net_value = Decimal(str(net_value_raw))
+                    except:
+                        net_value = expected_unit_cost * qty_packs
+
+                    # ----------------------------------------------------
+                    # CREATE PO LINE
+                    # ----------------------------------------------------
+                    PurchaseOrderLine.objects.create(
+                        po=po,
+                        product=product,
+                        requested_name=name or product.name,
+                        qty_packs_ordered=qty_packs,
+                        expected_unit_cost=expected_unit_cost,
+                        gst_percent_override=None
+                    )
+
+                    total_amount += net_value
+                    created_lines += 1
+
+                # ----------------------------------------------------
+                # UPDATE PO TOTAL
+                # ----------------------------------------------------
+                po.net_total = total_amount
+                po.save()
+
+                # AUTO RECEIVE PLACEHOLDER
+                if auto_receive and created_lines:
+                    logger.info("auto_receive requested but implementation is project-specific")
+
+            return Response({
+                "message": "imported",
+                "purchase_order_id": po.id,
+                "po_number": po.po_number,
+                "lines_created": created_lines,
+                "net_total": str(po.net_total),
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as exc:
+            logger.exception("Error importing purchase PDF: %s", exc)
+            return Response({
+                "detail": "error importing PDF",
+                "error": str(exc)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        finally:
+            if tmp_path:
+                try:
+                    if default_storage.exists(tmp_path):
+                        default_storage.delete(tmp_path)
+                except:
+                    pass
+
+
+
+    
