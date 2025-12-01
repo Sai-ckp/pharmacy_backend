@@ -185,6 +185,7 @@ class GoodsReceiptLineSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "product": {"required": False, "allow_null": True},
             "qty_base_received": {"required": False, "allow_null": True},
+            "grn": {"required": False},
         }
 
     def validate(self, attrs):
