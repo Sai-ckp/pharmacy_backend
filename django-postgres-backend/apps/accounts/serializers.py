@@ -39,9 +39,12 @@ class VerifyOtpSerializer(serializers.Serializer):
 
 class ResetPasswordSerializer(serializers.Serializer):
     uid = serializers.CharField()
-    token = serializers.CharField()
+    token = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default=""
+    )
     new_password = serializers.CharField(min_length=8, write_only=True)
-
 
 # -----------------------------
 # USER LIST + CREATE USER API
