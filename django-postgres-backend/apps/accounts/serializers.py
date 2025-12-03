@@ -1,3 +1,4 @@
+
 # apps/accounts/serializers.py
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
@@ -18,10 +19,6 @@ class OkSerializer(serializers.Serializer):
 class OTPRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
-
-class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
 # -----------------------------
 # OTP VERIFY
 # -----------------------------
@@ -37,6 +34,7 @@ class OTPVerifySerializer(serializers.Serializer):
 class VerifyOtpSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(min_length=4, max_length=6)
+
 
 
 class ResetPasswordSerializer(serializers.Serializer):
@@ -64,3 +62,4 @@ class UserListSerializer(serializers.ModelSerializer):
 
     def get_userId(self, obj):
         return f"USR{obj.pk:03d}"
+
