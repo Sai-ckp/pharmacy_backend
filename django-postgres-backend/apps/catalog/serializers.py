@@ -40,7 +40,6 @@ class ProductSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "name": {"required": True},
             "category": {"required": True},
-            "preferred_vendor": {"required": True},
             "pack_unit": {"required": True},
 
             # All these should NOT be required

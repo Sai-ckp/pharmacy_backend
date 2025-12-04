@@ -330,8 +330,7 @@ class AddMedicineView(APIView):
                         "gst_percent": "5.00",
                         "reorder_level": 50,
                         "mrp": "35.00",
-                        "description": "Pain reliever",
-                        "storage_instructions": "Keep in a cool, dry place"
+                        "description": "Pain reliever"
                     },
                     "batch": {
                         "batch_number": "BTH-2024-078",
@@ -423,7 +422,6 @@ class AddMedicineView(APIView):
         product.gst_percent = payload.get("gst_percent")
         product.reorder_level = payload.get("reorder_level")
         product.description = payload.get("description") or ""
-        product.storage_instructions = payload.get("storage_instructions") or ""
         product.tablets_per_strip = payload.get("tablets_per_strip")
         product.strips_per_box = payload.get("strips_per_box")
         product.rack_location = payload.get("rack_location")

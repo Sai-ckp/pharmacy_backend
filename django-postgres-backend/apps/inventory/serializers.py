@@ -69,7 +69,6 @@ class MedicinePayloadSerializer(serializers.Serializer):
     strips_per_box = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     gst_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
-    storage_instructions = serializers.CharField(required=False, allow_blank=True)
     reorder_level = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     mrp = serializers.DecimalField(max_digits=14, decimal_places=2)
     units_per_pack = serializers.DecimalField(max_digits=14, decimal_places=3, required=False, allow_null=True)
@@ -89,8 +88,6 @@ class MedicinePayloadSerializer(serializers.Serializer):
             attrs["strength"] = (attrs.get("strength") or "").strip()
         if "description" in attrs:
             attrs["description"] = attrs.get("description") or ""
-        if "storage_instructions" in attrs:
-            attrs["storage_instructions"] = attrs.get("storage_instructions") or ""
 
         units_per_pack = attrs.get("units_per_pack")
         tablets_per_strip = attrs.get("tablets_per_strip")
@@ -115,6 +112,7 @@ class MedicinePayloadSerializer(serializers.Serializer):
         gst_percent = attrs.get("gst_percent")
         attrs["gst_percent"] = Decimal(str(gst_percent or 0))
         attrs["mrp"] = Decimal(str(attrs.get("mrp")))
+        self._enforce_packaging_rules(attrs)
         return attrs
 
     @staticmethod
@@ -137,6 +135,33 @@ class MedicinePayloadSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"strips_per_box": "strips_per_box is required for BOX quantities."})
             return Decimal(tablets_per_strip) * Decimal(strips_per_box)
         return None
+
+    def _enforce_packaging_rules(self, attrs: dict) -> None:
+        base_uom = attrs.get("base_uom")
+        form = attrs.get("medicine_form")
+        if not base_uom or not form:
+            return
+        base_name = (base_uom.name or "").strip().upper()
+        form_name = (form.name or "").strip().upper()
+
+        def require_positive(value, field, message):
+            if value in (None, ""):
+                raise serializers.ValidationError({field: message})
+            if isinstance(value, (int, float, Decimal)):
+                if Decimal(str(value)) <= 0:
+                    raise serializers.ValidationError({field: message})
+
+        if base_name == "TAB" and form_name in {"TABLET", "CAPSULE"}:
+            require_positive(attrs.get("tablets_per_strip"), "tablets_per_strip", "Tablets per strip is required for tablet/capsule forms.")
+            require_positive(attrs.get("strips_per_box"), "strips_per_box", "Strips per box is required for tablet/capsule forms.")
+        elif base_name == "ML" and form_name in {"SYRUP", "SUSPENSION", "DROPS"}:
+            require_positive(attrs.get("units_per_pack"), "units_per_pack", "ML per bottle is required for liquid forms.")
+            require_positive(attrs.get("strips_per_box"), "strips_per_box", "Bottles per box is required for liquid forms.")
+        elif base_name == "VIAL" and form_name in {"INJECTION", "VIAL", "AMPOULE"}:
+            require_positive(attrs.get("units_per_pack"), "units_per_pack", "Vials per box is required for injection/vial forms.")
+        elif base_name == "GM" and form_name in {"OINTMENT", "CREAM", "GEL"}:
+            require_positive(attrs.get("units_per_pack"), "units_per_pack", "Grams per tube is required for ointment/cream/gel forms.")
+            require_positive(attrs.get("strips_per_box"), "strips_per_box", "Tubes per box is required for ointment/cream/gel forms.")
 
 
 class MedicineBatchInputSerializer(serializers.Serializer):

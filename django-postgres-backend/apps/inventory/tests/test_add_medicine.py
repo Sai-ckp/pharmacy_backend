@@ -85,7 +85,6 @@ class AddMedicineAPITests(TestCase):
                 "reorder_level": 50,
                 "mrp": "35.00",
                 "description": "Pain reliever",
-                "storage_instructions": "Store away from sunlight",
             },
             "batch": {
                 "batch_number": "PX-001",
