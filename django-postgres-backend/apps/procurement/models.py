@@ -164,9 +164,7 @@ class PurchaseOrder(models.Model):
 
 class PurchaseOrderLine(models.Model):
     po = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='lines')
-    product = models.ForeignKey('catalog.Product', on_delete=models.PROTECT, null=True, blank=True)
     requested_name = models.CharField(max_length=200, blank=True)
-    medicine_form = models.ForeignKey('catalog.MedicineForm', on_delete=models.SET_NULL, null=True, blank=True)
     qty_packs_ordered = models.IntegerField()
     expected_unit_cost = models.DecimalField(max_digits=14, decimal_places=2)
     gst_percent_override = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
@@ -181,13 +179,7 @@ class GoodsReceipt(models.Model):
     po = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT)
     location = models.ForeignKey('locations.Location', on_delete=models.PROTECT)
     received_at = models.DateTimeField(null=True, blank=True)
-    received_by = models.ForeignKey(
-    User,
-    on_delete=models.SET_NULL,
-    null=True,
-    blank=True,
-    related_name="goods_receipts"
-)
+    received_by = models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name="goods_receipts")
     supplier_invoice_no = models.CharField(max_length=64, blank=True)
     supplier_invoice_date = models.DateField(null=True, blank=True)
     note = models.TextField(blank=True)

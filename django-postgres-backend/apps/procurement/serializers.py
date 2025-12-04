@@ -61,8 +61,6 @@ class PurchaseOrderLineSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "po": {"required": False},
             "expected_unit_cost": {"required": False},
-            "product": {"required": False, "allow_null": True},
-            "medicine_form": {"required": False, "allow_null": True},
         }
 
     def validate(self, attrs):
@@ -132,8 +130,11 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             if product and not isinstance(product, Product):
                 product = Product.objects.filter(id=product).first()
             line["product"] = product
+            # PO does not create catalog product.
+            # If product exists → use its name.
             if product and not line.get("requested_name"):
                 line["requested_name"] = product.name
+            # If no product → requested_name is already validated
             qty = Decimal(str(line.get("qty_packs_ordered") or "0"))
             raw_cost = line.get("expected_unit_cost")
             cost = Decimal(str(raw_cost or "0"))

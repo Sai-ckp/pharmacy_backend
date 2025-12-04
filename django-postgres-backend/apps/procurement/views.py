@@ -48,10 +48,12 @@ class HealthView(APIView):
 
 
 class VendorViewSet(viewsets.ModelViewSet):
-    queryset = Vendor.objects.all()
     queryset = Vendor.objects.all().order_by("name")
     serializer_class = VendorSerializer
 
+    # -----------------------------
+    # Vendor Summary (totals)
+    # -----------------------------
     @extend_schema(
         tags=["Procurement"],
         summary="Vendor summary: totals and counts",
@@ -59,19 +61,23 @@ class VendorViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=["get"], url_path="summary")
     def summary(self, request, pk=None):
-        from django.db.models import Sum, Count
+        from django.db.models import Sum
+
         v = self.get_object()
         pos = PurchaseOrder.objects.filter(vendor_id=v.id)
+
         total_orders = pos.count()
         total_amount = pos.aggregate(s=Sum("net_total")).get("s") or 0
-        # products supplied = distinct products in PO lines
+
+        # DISTINCT requested item names instead of product_id
         prod_count = (
-            v
-            and PurchaseOrderLine.objects.filter(po__vendor_id=v.id)
-            .values("product_id")
+            PurchaseOrderLine.objects
+            .filter(po__vendor_id=v.id)
+            .values("requested_name")
             .distinct()
             .count()
         )
+
         return Response({
             "vendor_id": v.id,
             "total_orders": total_orders,
@@ -79,6 +85,9 @@ class VendorViewSet(viewsets.ModelViewSet):
             "products": prod_count,
         })
 
+    # -----------------------------
+    # Vendor PO List
+    # -----------------------------
     @extend_schema(
         tags=["Procurement"],
         summary="Vendor purchase orders list (compact)",
@@ -88,8 +97,14 @@ class VendorViewSet(viewsets.ModelViewSet):
     def vendor_pos(self, request, pk=None):
         v = self.get_object()
         items = []
-        for po in PurchaseOrder.objects.filter(vendor_id=v.id).order_by("-order_date")[:100]:
-            item_cnt = sum(l.qty_packs_ordered or 0 for l in po.lines.all())
+
+        for po in (
+            PurchaseOrder.objects
+            .filter(vendor_id=v.id)
+            .order_by("-order_date")[:100]
+        ):
+            item_cnt = sum((l.qty_packs_ordered or 0) for l in po.lines.all())
+
             items.append({
                 "po_id": po.id,
                 "po_number": po.po_number,
@@ -99,46 +114,82 @@ class VendorViewSet(viewsets.ModelViewSet):
                 "amount": float(po.net_total or 0),
                 "status": po.status,
             })
+
         return Response(items)
 
+    # -----------------------------
+    # Vendor Products (using requested_name since no product FK)
+    # -----------------------------
     @extend_schema(
         tags=["Procurement"],
-        summary="Vendor supplied products with last price and last order date",
+        summary="Vendor supplied item names with last price/date",
         responses={200: OpenApiTypes.OBJECT},
     )
     @action(detail=True, methods=["get"], url_path="products")
     def vendor_products(self, request, pk=None):
         v = self.get_object()
         from .models import GoodsReceiptLine, GoodsReceipt
-        from django.db.models import Max
-        # Use GRN lines for accurate last price/date
-        grn_ids = GoodsReceipt.objects.filter(po__vendor_id=v.id, status=GoodsReceipt.Status.POSTED).values_list("id", flat=True)
-        qs = GoodsReceiptLine.objects.filter(grn_id__in=list(grn_ids)).select_related("product")
-        # Build last price and date per product
+
+        # GRN IDs (posted only)
+        grn_ids = GoodsReceipt.objects.filter(
+            po__vendor_id=v.id,
+            status=GoodsReceipt.Status.POSTED
+        ).values_list("id", flat=True)
+
+        qs = GoodsReceiptLine.objects.filter(grn_id__in=list(grn_ids))
+
         last_map = {}
+
+        # --- Use GRN lines first ---
         for gl in qs.order_by("-grn__received_at"):
-            pid = gl.product_id
-            if pid not in last_map:
-                last_map[pid] = {
-                    "product_id": pid,
-                    "product_name": gl.product.name,
-                    "category": getattr(gl.product.category, "name", None),
+
+            # FIX: determine the item name safely
+            if gl.product:
+                key = gl.product.name
+            elif gl.po_line and gl.po_line.requested_name:
+                key = gl.po_line.requested_name
+            else:
+                key = "(Unnamed Item)"
+
+            if key not in last_map:
+                last_map[key] = {
+                    "item_name": key,
                     "last_price": float(gl.unit_cost or 0),
                     "last_order_date": gl.grn.received_at,
                 }
-        # Fallback to PO lines if no GRN yet
+
+        # --- Fallback to PO lines if no GRN exists ---
         if not last_map:
-            for pl in PurchaseOrderLine.objects.filter(po__vendor_id=v.id).select_related("product").order_by("-po__order_date"):
-                pid = pl.product_id
-                if pid not in last_map:
-                    last_map[pid] = {
-                        "product_id": pid,
-                        "product_name": pl.product.name,
-                        "category": getattr(pl.product.category, "name", None),
+            for pl in (
+                PurchaseOrderLine.objects
+                .filter(po__vendor_id=v.id)
+                .order_by("-po__order_date")
+            ):
+                key = pl.requested_name or "(Unnamed Item)"
+
+                if key not in last_map:
+                    last_map[key] = {
+                        "item_name": key,
                         "last_price": float(pl.expected_unit_cost or 0),
                         "last_order_date": pl.po.order_date,
                     }
-        return Response(list(last_map.values()))
+
+        # Convert datetime to string
+        result = []
+        for item in last_map.values():
+            result.append({
+                "item_name": item["item_name"],
+                "last_price": item["last_price"],
+                "last_order_date": (
+                    item["last_order_date"].strftime("%d-%m-%Y")
+                    if item["last_order_date"]
+                    else None
+                ),
+            })
+
+        return Response(result)
+
+
 
 
 class PurchaseViewSet(viewsets.ModelViewSet):
@@ -324,19 +375,18 @@ class PoImportCommitView(APIView):
     )
     @transaction.atomic
     def post(self, request):
-        # Global vendor and location from payload
+        # Global vendor and location
         global_vendor_id = request.data.get("vendor_id") or request.data.get("vendor")
         location_id = request.data.get("location_id") or request.data.get("location")
         lines = request.data.get("lines") or []
+
         if not location_id or not isinstance(lines, list) or not lines:
             return Response({"detail": "location_id and lines required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Allow either a single global vendor_id, or vendor per line.
-        # Group lines by their effective vendor so that separate vendors
-        # always receive separate POs instead of overriding each other.
         from collections import defaultdict
-
         vendor_lines = defaultdict(list)
+
+        # Group by vendor
         for ln in lines:
             ln_vendor_id = ln.get("vendor_id") or ln.get("vendor") or global_vendor_id
             if not ln_vendor_id:
@@ -345,15 +395,17 @@ class PoImportCommitView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             try:
-                vid_int = int(ln_vendor_id)
+                ln_vendor_id = int(ln_vendor_id)
             except (TypeError, ValueError):
                 return Response({"detail": f"Invalid vendor id: {ln_vendor_id!r}"}, status=status.HTTP_400_BAD_REQUEST)
-            vendor_lines[vid_int].append(ln)
+
+            vendor_lines[ln_vendor_id].append(ln)
 
         po_results = []
         actor = request.user if request.user.is_authenticated else None
 
         for vendor_id, v_lines in vendor_lines.items():
+
             po_payload = {
                 "vendor": vendor_id,
                 "location": location_id,
@@ -362,40 +414,55 @@ class PoImportCommitView(APIView):
                 "note": request.data.get("note", ""),
                 "lines": [],
             }
+
             for ln in v_lines:
-                product_id = ln.get("product_id")
-                requested_name = (ln.get("requested_name") or ln.get("product_name") or ln.get("name") or "").strip()
-                medicine_form_id = ln.get("medicine_form_id") or ln.get("medicine_form")
-                if not product_id:
-                    vend_code = ln.get("vendor_code") or ln.get("product_code") or ""
-                    if vend_code:
-                        prod = product_by_vendor_code(int(vendor_id), vend_code)
-                        if prod:
-                            product_id = prod.id
-                    if not product_id and not requested_name:
-                        return Response(
-                            {"detail": "Each line must include product_id or product_name."},
-                            status=status.HTTP_400_BAD_REQUEST,
-                        )
-                if not product_id and not medicine_form_id:
+
+                # Product always optional for PO (NO creation)
+                product_id = ln.get("product_id") or ln.get("product")
+
+                # PO only stores names when no product found
+                requested_name = (
+                    ln.get("requested_name")
+                    or ln.get("product_name")
+                    or ln.get("name")
+                    or ""
+                ).strip()
+
+                # If no product_id → must have a requested_name
+                if not product_id and not requested_name:
                     return Response(
-                        {"detail": "medicine_form is required when adding a new product."},
+                        {"detail": "requested_name is required when product_id is missing."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
+
+                # DO NOT USE vendor_code → because it may trigger product lookup
+                # Removed: product_by_vendor_code()
+                # Removed: medicine_form logic
+
                 line_payload = {
-                    "product": product_id,
-                    "medicine_form": medicine_form_id,
-                    "qty_packs_ordered": ln.get("qty") or ln.get("qty_packs") or ln.get("qty_packs_ordered") or 0,
-                    "expected_unit_cost": ln.get("unit_cost") or ln.get("price") or ln.get("expected_unit_cost") or "0.00",
+                    "product": product_id,  # May be None (allowed)
+                    "requested_name": requested_name,
+                    "qty_packs_ordered": (
+                        ln.get("qty")
+                        or ln.get("qty_packs")
+                        or ln.get("qty_packs_ordered")
+                        or 0
+                    ),
+                    "expected_unit_cost": (
+                        ln.get("unit_cost")
+                        or ln.get("price")
+                        or ln.get("expected_unit_cost")
+                        or "0.00"
+                    ),
                     "gst_percent_override": ln.get("gst_percent") or ln.get("gst_percent_override"),
                 }
-                if requested_name:
-                    line_payload["requested_name"] = requested_name
+
                 po_payload["lines"].append(line_payload)
 
             ser = PurchaseOrderSerializer(data=po_payload)
             ser.is_valid(raise_exception=True)
             po = ser.save()
+
             audit(
                 actor,
                 table="procurement_purchaseorder",
@@ -406,17 +473,17 @@ class PoImportCommitView(APIView):
             )
             po_results.append(ser.data)
 
-        # Backwards compatible response shape: if only one vendor,
-        # return that PO as before; if multiple vendors, still return
-        # the first PO but include IDs of additional POs for reference.
+        # Same response format
         if len(po_results) == 1:
             return Response(po_results[0], status=status.HTTP_201_CREATED)
 
-        primary = po_results[0] if isinstance(po_results[0], dict) else {"primary": po_results[0]}
-        extra_ids = [po_data.get("id") for po_data in po_results[1:] if isinstance(po_data, dict)]
-        primary["extra_po_ids"] = extra_ids
-        primary["extra_pos_count"] = len(extra_ids)
+        primary = po_results[0]
+        primary["extra_po_ids"] = [
+            p.get("id") for p in po_results[1:] if isinstance(p, dict)
+        ]
+        primary["extra_pos_count"] = len(primary["extra_po_ids"])
         return Response(primary, status=status.HTTP_201_CREATED)
+
 
 
 class GrnImportCommitView(APIView):
@@ -558,7 +625,7 @@ class PurchasePDFImportView(APIView):
                     name = (it.get("name") or "").strip()
 
                     # -----------------------------------------
-                    # PRODUCT LOOKUP
+                    # PRODUCT LOOKUP (allowed, but NOT creation)
                     # -----------------------------------------
                     product = None
 
@@ -576,48 +643,9 @@ class PurchasePDFImportView(APIView):
                         product = Product.objects.filter(name__icontains=first_token).first()
 
                     # -----------------------------------------
-                    # PRODUCT CREATE IF NOT FOUND
+                    # PRODUCT CREATION REMOVED COMPLETELY
+                    # product stays None
                     # -----------------------------------------
-                    if not product:
-
-                        base_unit_raw = it.get("base_unit") or ""
-                        pack_unit_raw = it.get("pack_unit") or ""
-                        units_per_pack_raw = it.get("units_per_pack") or 1
-
-                        # Auto-generate product code based on name + digits + units
-                        code = generate_product_code(name, units_per_pack_raw)
-
-                        # Resolve UOMs
-                        base_uom = None
-                        selling_uom = None
-
-                        if base_unit_raw:
-                            base_uom = Uom.objects.filter(name__iexact=base_unit_raw).first()
-
-                        if pack_unit_raw:
-                            selling_uom = Uom.objects.filter(name__iexact=pack_unit_raw).first()
-
-                        product = Product.objects.create(
-                            code=code,                      # <<< FIXED CODE GENERATION
-                            name=name or "UNKNOWN",
-                            generic_name="",
-                            dosage_strength="",
-                            hsn="",
-                            schedule=Product.Schedule.OTC,
-                            category=None,
-                            medicine_form=None,
-                            base_uom=base_uom,
-                            selling_uom=selling_uom,
-                            pack_size="",
-                            manufacturer="",
-                            mrp=Decimal(it.get("mrp") or 0),
-
-                            base_unit=base_unit_raw or "",
-                            pack_unit=pack_unit_raw or "",
-                            units_per_pack=Decimal(units_per_pack_raw),
-
-                            preferred_vendor=vendor,
-                        )
 
                     # -----------------------------------------
                     # PARSE NUMERIC FIELDS
@@ -646,8 +674,7 @@ class PurchasePDFImportView(APIView):
                     # -----------------------------------------
                     PurchaseOrderLine.objects.create(
                         po=po,
-                        product=product,
-                        requested_name=name or product.name,
+                        requested_name=name or (product.name if product else ""),
                         qty_packs_ordered=qty_packs,
                         expected_unit_cost=expected_unit_cost,
                         gst_percent_override=None
@@ -684,6 +711,7 @@ class PurchasePDFImportView(APIView):
         finally:
             if tmp_path and default_storage.exists(tmp_path):
                 default_storage.delete(tmp_path)
+
 
 
 def generate_product_code(name, units_per_pack):
