@@ -92,6 +92,20 @@ class SettingsGroupView(APIView):
         data = {}
         for group, items in keys.items():
             data[group] = {k: SettingKV.objects.filter(key=k).values_list("value", flat=True).first() for k in items}
+
+        # Overlay values from structured settings models so UI sees the actual values
+        alerts_obj = AlertThresholds.objects.first()
+        if alerts_obj:
+            alerts = data.get("alerts", {})
+            alerts.update(
+                {
+                    "ALERT_EXPIRY_CRITICAL_DAYS": str(alerts_obj.critical_expiry_days),
+                    "ALERT_EXPIRY_WARNING_DAYS": str(alerts_obj.warning_expiry_days),
+                    "ALERT_LOW_STOCK_DEFAULT": str(alerts_obj.low_stock_default),
+                }
+            )
+            data["alerts"] = alerts
+
         return Response(data)
 
 
@@ -125,11 +139,36 @@ class SettingsGroupSaveView(APIView):
         # Accept nested dict of {group: {KEY: value}}
         payload = request.data or {}
         to_write: dict[str, str] = {}
+        alerts_payload = payload.get("alerts") if isinstance(payload.get("alerts"), dict) else None
+        if alerts_payload:
+            field_map = {
+                "ALERT_EXPIRY_CRITICAL_DAYS": "critical_expiry_days",
+                "ALERT_EXPIRY_WARNING_DAYS": "warning_expiry_days",
+                "ALERT_LOW_STOCK_DEFAULT": "low_stock_default",
+            }
+            obj, _ = AlertThresholds.objects.get_or_create(id=1)
+            updated = False
+            for key, field in field_map.items():
+                raw_val = alerts_payload.get(key)
+                if raw_val in (None, ""):
+                    continue
+                try:
+                    val_int = int(raw_val)
+                except (TypeError, ValueError):
+                    return Response({key: "Must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+                setattr(obj, field, val_int)
+                updated = True
+            if updated:
+                obj.save()
+
         for group, kvs in payload.items():
             if not isinstance(kvs, dict):
                 continue
             for k, v in kvs.items():
                 if v is None:
+                    continue
+                # Skip keys that are handled by structured models
+                if group == "alerts" and k in {"ALERT_EXPIRY_CRITICAL_DAYS", "ALERT_EXPIRY_WARNING_DAYS", "ALERT_LOW_STOCK_DEFAULT"}:
                     continue
                 to_write[str(k)] = str(v)
         if not to_write:
