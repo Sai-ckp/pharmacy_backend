@@ -95,3 +95,90 @@ class GRNPartialTests(TestCase):
 
         stock = InventoryMovement.objects.filter(location=self.location, batch_lot__batch_no="B1").aggregate(total_sum=models.Sum("qty_change_base"))
         self.assertEqual(Decimal(stock["total_sum"] or 0), Decimal("100.000"))
+
+    def test_receiving_more_than_ordered_raises_error(self):
+        po = PurchaseOrder.objects.create(
+            vendor=self.vendor,
+            location=self.location,
+            po_number="PO-2",
+            status=PurchaseOrder.Status.OPEN,
+        )
+        pol = PurchaseOrderLine.objects.create(
+            po=po,
+            product=self.product,
+            requested_name="Paracetamol",
+            qty_packs_ordered=24,
+            expected_unit_cost=Decimal("5.00"),
+        )
+
+        grn = GoodsReceipt.objects.create(po=po, location=self.location, status=GoodsReceipt.Status.DRAFT)
+        GoodsReceiptLine.objects.create(
+            grn=grn,
+            po_line=pol,
+            product=self.product,
+            batch_no="B2",
+            mfg_date=date.today(),
+            expiry_date=date.today() + timedelta(days=365),
+            qty_packs_received=12,
+            qty_base_received=Decimal("12.000"),
+            unit_cost=Decimal("5.00"),
+            mrp=Decimal("50.00"),
+        )
+        post_goods_receipt(grn.id, actor=self.user)
+
+        grn2 = GoodsReceipt.objects.create(po=po, location=self.location, status=GoodsReceipt.Status.DRAFT)
+        GoodsReceiptLine.objects.create(
+            grn=grn2,
+            po_line=pol,
+            product=self.product,
+            batch_no="B2",
+            mfg_date=date.today(),
+            expiry_date=date.today() + timedelta(days=365),
+            qty_packs_received=13,
+            qty_base_received=Decimal("13.000"),
+            unit_cost=Decimal("5.00"),
+            mrp=Decimal("50.00"),
+        )
+        with self.assertRaisesMessage(ValueError, "exceeds total ordered"):
+            post_goods_receipt(grn2.id, actor=self.user)
+        self.assertEqual(InventoryMovement.objects.count(), 1)
+
+    def test_goods_receipt_updates_product_mrp_and_batch_prices(self):
+        po = PurchaseOrder.objects.create(
+            vendor=self.vendor,
+            location=self.location,
+            po_number="PO-3",
+            status=PurchaseOrder.Status.OPEN,
+        )
+        pol = PurchaseOrderLine.objects.create(
+            po=po,
+            product=self.product,
+            requested_name="Paracetamol",
+            qty_packs_ordered=30,
+            expected_unit_cost=Decimal("5.00"),
+        )
+
+        grn = GoodsReceipt.objects.create(po=po, location=self.location, status=GoodsReceipt.Status.DRAFT)
+        GoodsReceiptLine.objects.create(
+            grn=grn,
+            po_line=pol,
+            product=self.product,
+            batch_no="B3",
+            mfg_date=date.today(),
+            expiry_date=date.today() + timedelta(days=365),
+            qty_packs_received=10,
+            qty_base_received=Decimal("10.000"),
+            unit_cost=Decimal("6.00"),
+            mrp=Decimal("75.00"),
+        )
+
+        post_goods_receipt(grn.id, actor=self.user)
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.mrp, Decimal("75.00"))
+
+        batch = BatchLot.objects.get(product=self.product, batch_no="B3")
+        self.assertEqual(batch.purchase_price, Decimal("6.00"))
+        self.assertEqual(batch.purchase_price_per_base, Decimal("6.000000"))
+        self.assertEqual(batch.initial_quantity, Decimal("10.000"))
+        self.assertEqual(batch.initial_quantity_base, Decimal("10.000"))
