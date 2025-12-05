@@ -12,6 +12,7 @@ from .views import (
     MovementsListView,
     StockSummaryView,
     AddMedicineView,
+    MedicineDetailView,
     MedicinesListView,
     GlobalMedicinesView,
 )
@@ -34,6 +35,7 @@ urlpatterns = [
     path('stats/', InventoryStatsView.as_view(), name='inventory-stats'),
     path('add-medicine/', AddMedicineView.as_view(), name='inventory-add-medicine'),
     path('medicines/', MedicinesListView.as_view(), name='inventory-medicines'),
+    path('medicines/<int:batch_id>/', MedicineDetailView.as_view(), name='inventory-medicine-detail'),
     path('medicines/global/', GlobalMedicinesView.as_view(), name='inventory-medicines-global'),
 ]
 

@@ -22,6 +22,7 @@ from .serializers import (
     RackLocationSerializer,
     AddMedicineRequestSerializer,
     AddMedicineResponseSerializer,
+    UpdateMedicineRequestSerializer,
 )
 from apps.settingsx.services import get_setting
 from django.db import transaction
@@ -312,7 +313,153 @@ class StockSummaryView(APIView):
         rows = stock_summary(location_id=location_id, product_id=product_id)
         return Response(rows)
 
-class AddMedicineView(APIView):
+class MedicineViewMixin:
+    def _resolve_location_id(self, request, location):
+        if location:
+            try:
+                return int(location)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({"location_id": "location_id must be an integer"})
+        profile = getattr(request.user, "profile", None)
+        if profile and getattr(profile, "location_id", None):
+            return profile.location_id
+        first = Location.objects.order_by("id").first()
+        return first.id if first else None
+
+    def _generate_code(self) -> str:
+        last = Product.objects.order_by("-id").first()
+        next_id = (last.id + 1) if last else 1
+        return f"PRD-{next_id:05d}"
+
+    def _upsert_product(self, payload: dict) -> Product:
+        product_id = payload.get("id")
+        product = None
+        if product_id:
+            product = Product.objects.select_for_update().filter(id=product_id).first()
+            if not product:
+                raise serializers.ValidationError({"id": "Medicine not found."})
+        if not product:
+            product = Product()
+            product.code = payload.get("code") or self._generate_code()
+        product.name = payload["name"]
+        product.generic_name = payload.get("generic_name") or ""
+        product.dosage_strength = payload.get("strength") or ""
+        product.category = payload.get("category")
+        product.medicine_form = payload.get("medicine_form")
+        product.base_uom = payload.get("base_uom")
+        product.selling_uom = payload.get("selling_uom")
+        product.units_per_pack = payload.get("units_per_pack")
+        product.base_unit_step = Decimal("1.000")
+        product.mrp = payload.get("mrp")
+        product.gst_percent = payload.get("gst_percent")
+        product.description = payload.get("description") or ""
+        product.tablets_per_strip = payload.get("tablets_per_strip")
+        product.strips_per_box = payload.get("strips_per_box")
+        product.rack_location = payload.get("rack_location")
+        product.is_active = True
+        product.save()
+        return product
+
+    def _create_batch(self, product: Product, payload: dict) -> BatchLot:
+        batch_no = payload["batch_number"]
+        if BatchLot.objects.filter(product=product, batch_no=batch_no).exists():
+            raise serializers.ValidationError({"batch_number": "Batch already exists for this medicine."})
+
+        quantity = Decimal(str(payload["quantity"]))
+        total_base_units = Decimal(payload["conversion_factor"])
+        unit_factor = Decimal(payload.get("unit_factor") or total_base_units)
+        purchase_price = Decimal(str(payload["purchase_price"]))
+        price_per_base = Decimal("0.000000")
+        if unit_factor <= 0 and total_base_units > 0 and quantity > 0:
+            unit_factor = total_base_units / quantity
+        if unit_factor > 0:
+            price_per_base = purchase_price / unit_factor
+
+        rack_code = product.rack_location.name if product.rack_location else ""
+        batch = BatchLot.objects.create(
+            product=product,
+            batch_no=batch_no,
+            mfg_date=payload.get("mfg_date"),
+            expiry_date=payload.get("expiry_date"),
+            status=BatchLot.Status.ACTIVE,
+            rack_no=rack_code,
+            quantity_uom=payload.get("quantity_uom"),
+            initial_quantity=quantity,
+            initial_quantity_base=total_base_units,
+            purchase_price=purchase_price,
+            purchase_price_per_base=price_per_base,
+        )
+        return batch
+
+    def _update_batch(self, batch: BatchLot, payload: dict) -> BatchLot:
+        quantity = Decimal(str(payload["quantity"]))
+        total_base_units = Decimal(payload["conversion_factor"])
+        unit_factor = Decimal(payload.get("unit_factor") or total_base_units)
+        purchase_price = Decimal(str(payload["purchase_price"]))
+        price_per_base = Decimal("0.000000")
+        if unit_factor <= 0 and total_base_units > 0 and quantity > 0:
+            unit_factor = total_base_units / quantity
+        if unit_factor > 0:
+            price_per_base = purchase_price / unit_factor
+
+        batch.batch_no = payload["batch_number"]
+        batch.mfg_date = payload.get("mfg_date")
+        batch.expiry_date = payload.get("expiry_date")
+        batch.quantity_uom = payload.get("quantity_uom")
+        batch.initial_quantity = quantity
+        batch.initial_quantity_base = total_base_units
+        batch.purchase_price = purchase_price
+        batch.purchase_price_per_base = price_per_base
+        rack_code = batch.product.rack_location.name if batch.product.rack_location else ""
+        batch.rack_no = rack_code
+        batch.save()
+        return batch
+
+    @staticmethod
+    def _ref(obj):
+        if not obj:
+            return None
+        return {"id": obj.id, "name": getattr(obj, "name", "")}
+
+    def _serialize_product(self, product: Product) -> dict:
+        return {
+            "id": product.id,
+            "code": product.code,
+            "name": product.name,
+            "generic_name": product.generic_name,
+            "strength": product.dosage_strength,
+            "category": self._ref(product.category),
+            "form": self._ref(product.medicine_form),
+            "base_uom": self._ref(product.base_uom),
+            "selling_uom": self._ref(product.selling_uom),
+            "rack_location": self._ref(product.rack_location),
+            "gst_percent": str(product.gst_percent or Decimal("0")),
+            "description": product.description or "",
+            "storage_instructions": product.storage_instructions or "",
+            "tablets_per_strip": product.tablets_per_strip,
+            "strips_per_box": product.strips_per_box,
+            "units_per_pack": str(product.units_per_pack or Decimal("0")),
+            "mrp": str(product.mrp or Decimal("0.00")),
+            "status": "ACTIVE" if product.is_active else "INACTIVE",
+        }
+
+    def _serialize_batch(self, batch: BatchLot, stock_base: Decimal) -> dict:
+        return {
+            "id": batch.id,
+            "batch_number": batch.batch_no,
+            "status": batch.status,
+            "mfg_date": batch.mfg_date,
+            "expiry_date": batch.expiry_date,
+            "quantity": f"{batch.initial_quantity:.3f}",
+            "quantity_uom": self._ref(batch.quantity_uom),
+            "base_quantity": f"{batch.initial_quantity_base:.3f}",
+            "purchase_price": f"{batch.purchase_price:.2f}",
+            "purchase_price_per_base": f"{batch.purchase_price_per_base:.6f}",
+            "current_stock_base": f"{stock_base:.3f}",
+        }
+
+
+class AddMedicineView(MedicineViewMixin, APIView):
     permission_classes = [permissions.IsAdminUser]
     @extend_schema(
         tags=["Inventory"],
@@ -337,7 +484,6 @@ class AddMedicineView(APIView):
                         "tablets_per_strip": 10,
                         "strips_per_box": 5,
                         "gst_percent": "5.00",
-                        "reorder_level": 50,
                         "mrp": "35.00",
                         "description": "Pain reliever"
                     },
@@ -382,7 +528,7 @@ class AddMedicineView(APIView):
             )
 
         current_stock = stock_on_hand(int(location_id), batch.id)
-        stock_state = stock_status_for_quantity(current_stock, product.reorder_level)
+        stock_state = stock_status_for_quantity(current_stock)
 
         response_payload = {
             "medicine": self._serialize_product(product),
@@ -397,126 +543,72 @@ class AddMedicineView(APIView):
         response_serializer = AddMedicineResponseSerializer(response_payload)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
-    def _resolve_location_id(self, request, location):
-        if location:
-            try:
-                return int(location)
-            except (TypeError, ValueError):
-                raise serializers.ValidationError({"location_id": "location_id must be an integer"})
-        profile = getattr(request.user, "profile", None)
-        if profile and getattr(profile, "location_id", None):
-            return profile.location_id
-        return None
 
-    def _upsert_product(self, payload: dict) -> Product:
-        product_id = payload.get("id")
-        if product_id:
-            product = Product.objects.select_for_update().filter(id=product_id).first()
-            if not product:
-                raise serializers.ValidationError({"id": "Medicine not found."})
-        else:
-            product = Product()
-        if not getattr(product, "id", None):
-            product.code = product.code or self._generate_code()
-        product.name = payload["name"]
-        product.generic_name = payload.get("generic_name") or ""
-        product.dosage_strength = payload.get("strength") or ""
-        product.category = payload.get("category")
-        product.medicine_form = payload.get("medicine_form")
-        product.base_uom = payload.get("base_uom")
-        product.selling_uom = payload.get("selling_uom")
-        product.units_per_pack = payload.get("units_per_pack")
-        product.base_unit_step = Decimal("1.000")
-        product.mrp = payload.get("mrp")
-        product.gst_percent = payload.get("gst_percent")
-        product.reorder_level = payload.get("reorder_level")
-        product.description = payload.get("description") or ""
-        product.tablets_per_strip = payload.get("tablets_per_strip")
-        product.strips_per_box = payload.get("strips_per_box")
-        product.rack_location = payload.get("rack_location")
-        product.is_active = True
-        product.save()
-        return product
+class MedicineDetailView(MedicineViewMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
 
-    def _create_batch(self, product: Product, payload: dict) -> BatchLot:
-        batch_no = payload["batch_number"]
-        if BatchLot.objects.filter(product=product, batch_no=batch_no).exists():
-            raise serializers.ValidationError({"batch_number": "Batch already exists for this medicine."})
+    def get_batch(self, batch_id: int) -> BatchLot:
+        return BatchLot.objects.select_related(
+            "product",
+            "product__category",
+            "product__medicine_form",
+            "product__base_uom",
+            "product__selling_uom",
+            "product__rack_location",
+            "quantity_uom",
+        ).get(id=batch_id)
 
-        quantity = Decimal(str(payload["quantity"]))
-        total_base_units = Decimal(payload["conversion_factor"])
-        unit_factor = Decimal(payload.get("unit_factor") or total_base_units)
-        purchase_price = Decimal(str(payload["purchase_price"]))
-        price_per_base = Decimal("0.000000")
-        if unit_factor <= 0 and total_base_units > 0 and quantity > 0:
-            unit_factor = total_base_units / quantity
-        if unit_factor > 0:
-            price_per_base = purchase_price / unit_factor
-
-        rack_code = product.rack_location.name if product.rack_location else ""
-        batch = BatchLot.objects.create(
-            product=product,
-            batch_no=batch_no,
-            mfg_date=payload.get("mfg_date"),
-            expiry_date=payload.get("expiry_date"),
-            status=BatchLot.Status.ACTIVE,
-            rack_no=rack_code,
-            quantity_uom=payload.get("quantity_uom"),
-            initial_quantity=quantity,
-            initial_quantity_base=total_base_units,
-            purchase_price=purchase_price,
-            purchase_price_per_base=price_per_base,
-        )
-        return batch
-
-    def _generate_code(self) -> str:
-        last = Product.objects.order_by("-id").first()
-        next_id = (last.id + 1) if last else 1
-        return f"PRD-{next_id:05d}"
-
-    @staticmethod
-    def _ref(obj):
-        if not obj:
-            return None
-        return {"id": obj.id, "name": getattr(obj, "name", "")}
-
-    def _serialize_product(self, product: Product) -> dict:
-        return {
-            "id": product.id,
-            "code": product.code,
-            "name": product.name,
-            "generic_name": product.generic_name,
-            "strength": product.dosage_strength,
-            "category": self._ref(product.category),
-            "form": self._ref(product.medicine_form),
-            "base_uom": self._ref(product.base_uom),
-            "selling_uom": self._ref(product.selling_uom),
-            "rack_location": self._ref(product.rack_location),
-            "gst_percent": str(product.gst_percent or Decimal("0")),
-            "description": product.description or "",
-            "storage_instructions": product.storage_instructions or "",
-            "reorder_level": str(product.reorder_level or Decimal("0.000")),
-            "tablets_per_strip": product.tablets_per_strip,
-            "strips_per_box": product.strips_per_box,
-            "mrp": str(product.mrp or Decimal("0.00")),
-            "status": "ACTIVE" if product.is_active else "INACTIVE",
+    def get(self, request, batch_id: int):
+        location = request.query_params.get("location_id")
+        location_id = self._resolve_location_id(request, location)
+        try:
+            batch = self.get_batch(batch_id)
+        except BatchLot.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        stock_qty = stock_on_hand(location_id, batch.id) if location_id else Decimal("0")
+        stock_state = stock_status_for_quantity(stock_qty)
+        payload = {
+            "medicine": self._serialize_product(batch.product),
+            "batch": self._serialize_batch(batch, stock_qty),
+            "inventory": {
+                "location_id": location_id,
+                "stock_status": stock_state,
+                "stock_on_hand_base": f"{stock_qty:.3f}",
+            },
         }
+        return Response(payload)
 
-    def _serialize_batch(self, batch: BatchLot, stock_base: Decimal) -> dict:
-        return {
-            "id": batch.id,
-            "batch_number": batch.batch_no,
-            "status": batch.status,
-            "mfg_date": batch.mfg_date,
-            "expiry_date": batch.expiry_date,
-            "quantity": f"{batch.initial_quantity:.3f}",
-            "quantity_uom": self._ref(batch.quantity_uom),
-            "base_quantity": f"{batch.initial_quantity_base:.3f}",
-            "purchase_price": f"{batch.purchase_price:.2f}",
-            "purchase_price_per_base": f"{batch.purchase_price_per_base:.6f}",
-            "current_stock_base": f"{stock_base:.3f}",
+    def put(self, request, batch_id: int):
+        if not request.user.is_staff:
+            raise permissions.PermissionDenied("Only administrators can update medicines.")
+        serializer = UpdateMedicineRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        location_id = self._resolve_location_id(request, payload.get("location_id"))
+        try:
+            batch = self.get_batch(batch_id)
+        except BatchLot.DoesNotExist:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        batch_payload = payload["batch"]
+        if batch_payload.get("id") != batch_id:
+            raise serializers.ValidationError({"batch": "Batch id mismatch."})
+        medicine_payload = payload["medicine"]
+        if not medicine_payload.get("id"):
+            medicine_payload["id"] = batch.product_id
+        product = self._upsert_product(medicine_payload)
+        updated_batch = self._update_batch(batch, batch_payload)
+        stock_qty = stock_on_hand(location_id, updated_batch.id) if location_id else Decimal("0")
+        stock_state = stock_status_for_quantity(stock_qty)
+        response_payload = {
+            "medicine": self._serialize_product(product),
+            "batch": self._serialize_batch(updated_batch, stock_qty),
+            "inventory": {
+                "location_id": location_id,
+                "stock_status": stock_state,
+                "stock_on_hand_base": f"{stock_qty:.3f}",
+            },
         }
-
+        return Response(response_payload)
 
 class MedicinesListView(APIView):
     """
@@ -592,10 +684,6 @@ class MedicinesListView(APIView):
             c.id: c.name for c in ProductCategory.objects.filter(id__in=cat_ids)
         } if cat_ids else {}
 
-        product_ids = {r.get("batch_lot__product_id") for r in base_qs if r.get("batch_lot__product_id")}
-        reorder_map = {
-            p.id: p.reorder_level for p in Product.objects.filter(id__in=product_ids).only("reorder_level")
-        } if product_ids else {}
         low_default, _ = get_stock_thresholds()
         default_threshold = Decimal(str(low_default)) if low_default else None
 
@@ -604,9 +692,7 @@ class MedicinesListView(APIView):
             qty = r.get("quantity") or Decimal("0")
             # include zero and negative as Out of Stock rows so UI can still show them
             status_txt = "OUT_OF_STOCK"
-            product_id = r.get("batch_lot__product_id")
-            reorder = reorder_map.get(product_id)
-            threshold = reorder if reorder and reorder > 0 else default_threshold
+            threshold = default_threshold
             if qty > 0:
                 if threshold and qty <= threshold:
                     status_txt = "LOW_STOCK"

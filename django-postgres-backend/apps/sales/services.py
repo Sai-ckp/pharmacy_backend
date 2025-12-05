@@ -133,10 +133,17 @@ def post_invoice(actor, invoice_id):
 
     try:
         from apps.settingsx.services import get_setting
+        from apps.settingsx.utils import get_stock_thresholds
     except Exception:
         get_setting = lambda *args, **kwargs: 30
+        get_stock_thresholds = lambda: (30, 10)
 
     expiry_window_days = int(get_setting("CRITICAL_EXPIRY_DAYS", 30))
+    low_threshold, _ = get_stock_thresholds()
+    try:
+        low_threshold_val = Decimal(str(low_threshold or 0))
+    except Exception:
+        low_threshold_val = Decimal("0")
 
     for line in inv.lines.all():
         batch = line.batch_lot
@@ -148,7 +155,7 @@ def post_invoice(actor, invoice_id):
 
         # LOW STOCK CHECK
         available = stock_on_hand(inv.location_id, batch.id)
-        if available <= product.reorder_level:
+        if low_threshold_val and available <= low_threshold_val:
             dedupe_key = f"{inv.location_id}-{batch.id}-LOW_STOCK"
             enqueue_once(
                 channel="EMAIL",

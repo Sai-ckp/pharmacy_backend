@@ -132,7 +132,7 @@ class DashboardSummaryView(BaseDashboardView):
                     "product_id": row.get("product_id"),
                     "product_name": row.get("product_name") or "",
                     "stock_base": float(row.get("stock_base", 0)),
-                    "reorder_level": float(row.get("reorder_level", 0)),
+                    "threshold": float(row.get("threshold", 0)),
                     "location_id": row.get("location_id"),
                 }
             )

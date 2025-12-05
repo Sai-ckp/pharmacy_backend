@@ -69,7 +69,6 @@ class MedicinePayloadSerializer(serializers.Serializer):
     strips_per_box = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     gst_percent = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
-    reorder_level = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     mrp = serializers.DecimalField(max_digits=14, decimal_places=2)
     units_per_pack = serializers.DecimalField(max_digits=14, decimal_places=3, required=False, allow_null=True)
 
@@ -107,8 +106,6 @@ class MedicinePayloadSerializer(serializers.Serializer):
             raise serializers.ValidationError({"units_per_pack": "Unable to determine units_per_pack for the selected UOMs."})
         attrs["units_per_pack"] = inferred
 
-        reorder_level = attrs.get("reorder_level")
-        attrs["reorder_level"] = Decimal(str(reorder_level or 0))
         gst_percent = attrs.get("gst_percent")
         attrs["gst_percent"] = Decimal(str(gst_percent or 0))
         attrs["mrp"] = Decimal(str(attrs.get("mrp")))
@@ -191,6 +188,10 @@ class MedicineBatchInputSerializer(serializers.Serializer):
         return attrs
 
 
+class MedicineBatchUpdateSerializer(MedicineBatchInputSerializer):
+    id = serializers.IntegerField()
+
+
 class AddMedicineRequestSerializer(serializers.Serializer):
     location_id = serializers.IntegerField(required=False)
     medicine = MedicinePayloadSerializer()
@@ -217,6 +218,10 @@ class AddMedicineRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class UpdateMedicineRequestSerializer(AddMedicineRequestSerializer):
+    batch = MedicineBatchUpdateSerializer()
+
+
 class MedicineResponseSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     code = serializers.CharField(allow_null=True, required=False)
@@ -231,7 +236,6 @@ class MedicineResponseSerializer(serializers.Serializer):
     gst_percent = serializers.CharField()
     description = serializers.CharField()
     storage_instructions = serializers.CharField()
-    reorder_level = serializers.CharField()
     tablets_per_strip = serializers.IntegerField(required=False, allow_null=True)
     strips_per_box = serializers.IntegerField(required=False, allow_null=True)
     mrp = serializers.CharField()

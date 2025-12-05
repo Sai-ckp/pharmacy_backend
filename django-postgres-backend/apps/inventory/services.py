@@ -90,23 +90,17 @@ def convert_quantity_to_base(
     return Decimal(quantity) * factor, factor
 
 
-def _resolve_thresholds(reorder_level: Decimal | None) -> tuple[Decimal | None, Decimal | None]:
+def _resolve_thresholds() -> tuple[Decimal | None, Decimal | None]:
     low_default, critical_default = get_stock_thresholds()
-    low_threshold: Decimal | None = None
-    if reorder_level is not None and Decimal(reorder_level) > 0:
-        low_threshold = Decimal(reorder_level)
-    elif low_default is not None:
-        low_threshold = Decimal(str(low_default))
-    critical_threshold: Decimal | None = None
-    if critical_default:
-        critical_threshold = Decimal(str(critical_default))
+    low_threshold = Decimal(str(low_default)) if low_default not in (None, "") else None
+    critical_threshold = Decimal(str(critical_default)) if critical_default not in (None, "") else None
     return low_threshold, critical_threshold
 
 
-def stock_status_for_quantity(qty_base: Decimal, reorder_level: Decimal | None) -> str:
+def stock_status_for_quantity(qty_base: Decimal) -> str:
     if qty_base is None or qty_base <= 0:
         return "OUT_OF_STOCK"
-    low_threshold, critical_threshold = _resolve_thresholds(reorder_level)
+    low_threshold, _ = _resolve_thresholds()
     if low_threshold is None:
         return "IN_STOCK"
     if qty_base <= low_threshold:
@@ -245,7 +239,9 @@ def low_stock(location_id):
         .annotate(stock_base=Sum("qty_change_base"))
     )
     product_ids = [r["batch_lot__product_id"] for r in agg]
-    products = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+    product_map = {
+        p.id: p.name for p in Product.objects.filter(id__in=product_ids).only("name")
+    } if product_ids else {}
     low_default, _ = get_stock_thresholds()
     try:
         default_low = Decimal(str(low_default or 0))
@@ -253,17 +249,14 @@ def low_stock(location_id):
         default_low = Decimal("0")
     result = []
     for r in agg:
-        p = products.get(r["batch_lot__product_id"])
-        if not p:
-            continue
-        threshold = p.reorder_level if p.reorder_level and p.reorder_level > 0 else default_low
+        threshold = default_low
         if threshold and r["stock_base"] is not None and r["stock_base"] <= threshold:
             result.append(
                 {
-                    "product_id": p.id,
-                    "product_name": p.name,
+                    "product_id": r["batch_lot__product_id"],
+                    "product_name": product_map.get(r["batch_lot__product_id"], ""),
                     "stock_base": r["stock_base"],
-                    "reorder_level": threshold,
+                    "threshold": threshold,
                     "location_id": location_id,
                 }
             )
@@ -330,7 +323,6 @@ def global_inventory_rows(
             "batch_lot__product__generic_name",
             "batch_lot__product__category__name",
             "batch_lot__product__category_id",
-            "batch_lot__product__reorder_level",
             "batch_lot__product__mrp",
             "batch_lot__product__base_uom__name",
             "batch_lot__product__rack_location__name",
@@ -343,17 +335,7 @@ def global_inventory_rows(
     results: list[dict] = []
     for row in grouped:
         qty = Decimal(row.get("total_qty") or 0)
-        reorder_val = row.get("batch_lot__product__reorder_level")
-        try:
-            reorder_level = Decimal(str(reorder_val)) if reorder_val is not None else None
-        except Exception:
-            reorder_level = None
-        threshold = (
-            reorder_level
-            if reorder_level and reorder_level > 0
-            else (default_threshold if default_threshold > 0 else None)
-        )
-        status_txt = stock_status_for_quantity(qty, threshold)
+        status_txt = stock_status_for_quantity(qty)
 
         expiry_date = row.get("batch_lot__expiry_date")
         is_expiring = bool(
@@ -384,7 +366,6 @@ def global_inventory_rows(
                 "mrp": float(row.get("batch_lot__product__mrp") or 0),
                 "expiry_date": row.get("batch_lot__expiry_date"),
                 "status": status_txt,
-                "is_expiring": is_expiring,
             }
         )
     return results
@@ -399,19 +380,18 @@ def inventory_stats(location_id: int) -> dict:
         .annotate(stock_base=Sum("qty_change_base"))
     )
     product_ids = [r["batch_lot__product_id"] for r in agg]
-    products = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
+    low_default, _ = get_stock_thresholds()
     try:
-        default_low = Decimal(get_setting("ALERT_LOW_STOCK_DEFAULT", "50") or "50")
+        default_low = Decimal(str(low_default or 50))
     except Exception:
         default_low = Decimal("50")
     counts = {"in_stock": 0, "low_stock": 0, "out_of_stock": 0}
     for r in agg:
         qty = r.get("stock_base") or Decimal("0")
-        p = products.get(r["batch_lot__product_id"])
-        threshold = p.reorder_level if p and p.reorder_level is not None else default_low
+        threshold = default_low
         if qty <= 0:
             counts["out_of_stock"] += 1
-        elif qty <= threshold:
+        elif threshold and qty <= threshold:
             counts["low_stock"] += 1
         else:
             counts["in_stock"] += 1

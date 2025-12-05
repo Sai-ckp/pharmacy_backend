@@ -114,7 +114,13 @@ def receive_transfer(actor, voucher_id):
     # -----------------------------------------
     from apps.notifications.services import enqueue_once
     from apps.settingsx.services import get_setting
+    from apps.settingsx.utils import get_stock_thresholds
     expiry_window_days = int(get_setting("CRITICAL_EXPIRY_DAYS", 30))
+    low_threshold, _ = get_stock_thresholds()
+    try:
+        low_threshold_val = Decimal(str(low_threshold or 0))
+    except Exception:
+        low_threshold_val = Decimal("0")
 
     for l in v.lines.all():
         batch = l.batch_lot
@@ -124,7 +130,7 @@ def receive_transfer(actor, voucher_id):
         available = stock_on_hand(v.to_location_id, batch.id)
 
         # 1. LOW STOCK NOTIFICATION
-        if available <= product.reorder_level:
+        if low_threshold_val and available <= low_threshold_val:
             dedupe_key = f"{v.to_location_id}-{batch.id}-LOW_STOCK"
 
             enqueue_once(

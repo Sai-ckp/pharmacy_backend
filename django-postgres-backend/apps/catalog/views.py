@@ -66,8 +66,7 @@ class ProductViewSet(viewsets.ModelViewSet):
                 pid = r.get('product_id')
                 per_product[pid] = per_product.get(pid, 0) + (r.get('stock_base') or 0)
             for pid, qty in per_product.items():
-                p = Product.objects.filter(id=pid).first()
-                thresh = p.reorder_level if p and p.reorder_level is not None else default_low
+                thresh = default_low
                 if thresh is not None and qty < thresh:
                     low_ids.append(pid)
             qs = qs.filter(id__in=low_ids or [-1])
