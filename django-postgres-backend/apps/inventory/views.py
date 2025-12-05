@@ -578,6 +578,7 @@ class MedicineDetailView(MedicineViewMixin, APIView):
         }
         return Response(payload)
 
+    @transaction.atomic
     def put(self, request, batch_id: int):
         if not request.user.is_staff:
             raise permissions.PermissionDenied("Only administrators can update medicines.")

@@ -66,10 +66,10 @@ def convert_quantity_to_base(
     q_uom_name = (quantity_uom.name or "").strip().upper()
     base_name = (base_uom.name or "").strip().upper()
 
-    if quantity_uom.id == base_uom.id:
-        factor = Decimal("1")
-    elif quantity_uom.id == selling_uom.id:
+    if quantity_uom.id == selling_uom.id:
         factor = units_per_pack
+    elif quantity_uom.id == base_uom.id:
+        factor = Decimal("1")
     elif base_name in {"TAB", "TABLET", "CAP", "CAPSULE"} and q_uom_name in STRIP_NAMES:
         if not tablets_per_strip:
             raise ValidationError({"tablets_per_strip": "tablets_per_strip is required for STRIP quantities"})
@@ -366,6 +366,7 @@ def global_inventory_rows(
                 "mrp": float(row.get("batch_lot__product__mrp") or 0),
                 "expiry_date": row.get("batch_lot__expiry_date"),
                 "status": status_txt,
+                "is_expiring": is_expiring,
             }
         )
     return results

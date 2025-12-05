@@ -8,6 +8,7 @@ from rest_framework.test import APITestCase
 from apps.catalog.models import ProductCategory, Product, MedicineForm, Uom, BatchLot
 from apps.inventory.models import InventoryMovement, RackLocation
 from apps.locations.models import Location
+from apps.settingsx.models import AlertThresholds
 
 
 class MedicinesListViewTests(APITestCase):
@@ -50,6 +51,10 @@ class MedicinesListViewTests(APITestCase):
             reason=InventoryMovement.Reason.PURCHASE,
             ref_doc_type="TEST",
             ref_doc_id=1,
+        )
+        AlertThresholds.objects.update_or_create(
+            id=1,
+            defaults={"low_stock_default": 5, "critical_expiry_days": 30, "warning_expiry_days": 60},
         )
 
     def test_list_requires_location_and_returns_status(self):
@@ -138,6 +143,10 @@ class GlobalMedicinesViewTests(APITestCase):
             ref_doc_type="TEST",
             ref_doc_id=2,
         )
+        AlertThresholds.objects.update_or_create(
+            id=1,
+            defaults={"low_stock_default": 10, "critical_expiry_days": 30, "warning_expiry_days": 60},
+        )
 
     def test_global_endpoint_sums_quantities(self):
         url = "/api/v1/inventory/medicines/global/"
@@ -210,6 +219,10 @@ class MedicineDetailViewTests(APITestCase):
             ref_doc_type="TEST",
             ref_doc_id=9,
         )
+        AlertThresholds.objects.update_or_create(
+            id=1,
+            defaults={"low_stock_default": 10, "critical_expiry_days": 30, "warning_expiry_days": 60},
+        )
 
     def test_get_detail(self):
         url = f"/api/v1/inventory/medicines/{self.batch.id}/"
@@ -236,7 +249,6 @@ class MedicineDetailViewTests(APITestCase):
                 "strips_per_box": 10,
                 "gst_percent": "5.00",
                 "description": "",
-                "reorder_level": 5,
                 "mrp": "95.00",
             },
             "batch": {
