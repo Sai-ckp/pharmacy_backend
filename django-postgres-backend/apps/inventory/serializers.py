@@ -210,7 +210,8 @@ class AddMedicineRequestSerializer(serializers.Serializer):
             strips_per_box=medicine.get("strips_per_box"),
         )
         batch["quantity_base"] = qty_base
-        batch["conversion_factor"] = factor
+        batch["conversion_factor"] = qty_base
+        batch["unit_factor"] = factor
         attrs["batch"] = batch
         attrs["medicine"] = medicine
         return attrs

@@ -435,12 +435,14 @@ class AddMedicineView(APIView):
             raise serializers.ValidationError({"batch_number": "Batch already exists for this medicine."})
 
         quantity = Decimal(str(payload["quantity"]))
-        qty_base = Decimal(payload["quantity_base"])
-        conversion_factor = Decimal(payload["conversion_factor"])
+        total_base_units = Decimal(payload["conversion_factor"])
+        unit_factor = Decimal(payload.get("unit_factor") or total_base_units)
         purchase_price = Decimal(str(payload["purchase_price"]))
         price_per_base = Decimal("0.000000")
-        if conversion_factor > 0:
-            price_per_base = purchase_price / conversion_factor
+        if unit_factor <= 0 and total_base_units > 0 and quantity > 0:
+            unit_factor = total_base_units / quantity
+        if unit_factor > 0:
+            price_per_base = purchase_price / unit_factor
 
         rack_code = product.rack_location.name if product.rack_location else ""
         batch = BatchLot.objects.create(
@@ -452,7 +454,7 @@ class AddMedicineView(APIView):
             rack_no=rack_code,
             quantity_uom=payload.get("quantity_uom"),
             initial_quantity=quantity,
-            initial_quantity_base=qty_base,
+            initial_quantity_base=total_base_units,
             purchase_price=purchase_price,
             purchase_price_per_base=price_per_base,
         )
