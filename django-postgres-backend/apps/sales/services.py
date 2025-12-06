@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 
 from .models import SalesInvoice, SalesLine
 from apps.inventory.models import InventoryMovement
+from apps.inventory.services import write_movement
 from apps.compliance.services import (
     ensure_prescription_for_invoice,
     create_compliance_entries,
@@ -26,9 +27,19 @@ def stock_on_hand(location_id, batch_lot_id):
     )
     return Decimal(s["total"] or 0)
 
+def write_movement(location_id, batch_lot_id, qty_delta, reason="SALE", ref_doc_type=None, ref_doc_id=None):
+    """
+    Unified write_movement that:
+    - Creates InventoryMovement entry
+    - Updates BatchStock quantity
+    - Accepts both the old 3-argument call and the newer 6-argument call
+    """
 
-def write_movement(location_id, batch_lot_id, qty_delta, reason, ref_doc_type, ref_doc_id):
-    InventoryMovement.objects.create(
+    from apps.inventory.models import InventoryMovement, BatchStock
+    from django.db.models import Sum
+
+    # 1. Create movement record
+    mov = InventoryMovement.objects.create(
         location_id=location_id,
         batch_lot_id=batch_lot_id,
         qty_change_base=qty_delta,
@@ -36,6 +47,26 @@ def write_movement(location_id, batch_lot_id, qty_delta, reason, ref_doc_type, r
         ref_doc_type=ref_doc_type,
         ref_doc_id=ref_doc_id,
     )
+
+    # 2. Update (or create) BatchStock entry
+    stock_obj, created = BatchStock.objects.get_or_create(
+        batch_id=batch_lot_id,
+        location_id=location_id,
+        defaults={"quantity": 0},
+    )
+
+    # 3. Recalculate latest quantity
+    new_qty = (
+        InventoryMovement.objects
+        .filter(batch_lot_id=batch_lot_id, location_id=location_id)
+        .aggregate(total=Sum("qty_change_base"))
+        .get("total") or 0
+    )
+
+    stock_obj.quantity = new_qty
+    stock_obj.save()
+
+    return mov
 
 
 @transaction.atomic
@@ -255,5 +286,3 @@ def _audit(actor, table_name, record_id, action):
         record_id=record_id,
         created_at=timezone.now(),
     )
-
-

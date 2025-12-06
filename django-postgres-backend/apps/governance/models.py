@@ -1,8 +1,15 @@
 from django.db import models
+from django.conf import settings
+
 
 
 class AuditLog(models.Model):
-    actor_user = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True)
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
     action = models.CharField(max_length=64)
     table_name = models.CharField(max_length=120)
     record_id = models.CharField(max_length=64)
@@ -31,7 +38,11 @@ class SystemEvent(models.Model):
 
 
 class BreachLog(models.Model):
-    reported_by_user = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, null=True, blank=True)
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True)
     description = models.TextField()
     severity = models.CharField(max_length=64)
     event_time = models.DateTimeField()
