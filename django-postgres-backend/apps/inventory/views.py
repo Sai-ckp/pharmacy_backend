@@ -30,6 +30,7 @@ from apps.inventory.models import BatchStock
 from apps.settingsx.utils import get_stock_thresholds
 from apps.settingsx.models import SettingKV
 
+DEFAULT_LOCATION_ID = 1
 
 class HealthView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -320,11 +321,7 @@ class MedicineViewMixin:
                 return int(location)
             except (TypeError, ValueError):
                 raise serializers.ValidationError({"location_id": "location_id must be an integer"})
-        profile = getattr(request.user, "profile", None)
-        if profile and getattr(profile, "location_id", None):
-            return profile.location_id
-        first = Location.objects.order_by("id").first()
-        return first.id if first else None
+        return DEFAULT_LOCATION_ID
 
     def _generate_code(self) -> str:
         last = Product.objects.order_by("-id").first()
@@ -422,6 +419,16 @@ class MedicineViewMixin:
         return {"id": obj.id, "name": getattr(obj, "name", "")}
 
     def _serialize_product(self, product: Product) -> dict:
+        packaging = {
+            "tablets_per_strip": product.tablets_per_strip,
+            "strips_per_box": product.strips_per_box,
+            "ml_per_bottle": str(product.ml_per_bottle) if product.ml_per_bottle is not None else None,
+            "bottles_per_box": product.bottles_per_box,
+            "vials_per_box": product.vials_per_box,
+            "ml_per_vial": str(product.ml_per_vial) if product.ml_per_vial is not None else None,
+            "grams_per_tube": str(product.grams_per_tube) if product.grams_per_tube is not None else None,
+            "tubes_per_box": product.tubes_per_box,
+        }
         return {
             "id": product.id,
             "code": product.code,
@@ -438,9 +445,17 @@ class MedicineViewMixin:
             "storage_instructions": product.storage_instructions or "",
             "tablets_per_strip": product.tablets_per_strip,
             "strips_per_box": product.strips_per_box,
+            "ml_per_bottle": packaging["ml_per_bottle"],
+            "bottles_per_box": product.bottles_per_box,
+            "vials_per_box": product.vials_per_box,
+            "ml_per_vial": packaging["ml_per_vial"],
+            "grams_per_tube": packaging["grams_per_tube"],
+            "tubes_per_box": product.tubes_per_box,
             "units_per_pack": str(product.units_per_pack or Decimal("0")),
             "mrp": str(product.mrp or Decimal("0.00")),
+            "mrp_per_selling_uom": str(product.mrp or Decimal("0.00")),
             "status": "ACTIVE" if product.is_active else "INACTIVE",
+            "packaging": packaging,
         }
 
     def _serialize_batch(self, batch: BatchLot, stock_base: Decimal) -> dict:
@@ -456,6 +471,8 @@ class MedicineViewMixin:
             "purchase_price": f"{batch.purchase_price:.2f}",
             "purchase_price_per_base": f"{batch.purchase_price_per_base:.6f}",
             "current_stock_base": f"{stock_base:.3f}",
+            "opening_stock_selling_uom": f"{batch.initial_quantity:.3f}",
+            "purchase_price_per_selling_uom": f"{batch.purchase_price:.2f}",
         }
 
 
@@ -506,8 +523,6 @@ class AddMedicineView(MedicineViewMixin, APIView):
         payload = serializer.validated_data
 
         location_id = self._resolve_location_id(request, payload.get("location_id"))
-        if not location_id:
-            raise serializers.ValidationError({"location_id": "location_id is required"})
 
         medicine_payload = payload["medicine"]
         batch_payload = payload["batch"]
