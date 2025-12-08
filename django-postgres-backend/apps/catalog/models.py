@@ -174,7 +174,7 @@ class Product(models.Model):
 
         super().save(*args, **kwargs)
 
-
+#changing the medicineFrom to the HSN code 
 class MedicineForm(models.Model):
     name = models.CharField(max_length=120, unique=True)
     description = models.CharField(max_length=512, null=True, blank=True)

@@ -19,7 +19,6 @@ class Vendor(models.Model):
     email = models.EmailField(blank=True)
     contact_person = models.CharField(max_length=120, blank=True)
     address = models.TextField(blank=True)
-    payment_terms = models.CharField(max_length=120, blank=True)
     bank_name = models.CharField(max_length=120, blank=True)
     account_no = models.CharField(max_length=64, blank=True)
     ifsc = models.CharField(max_length=32, blank=True)

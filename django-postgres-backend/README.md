@@ -93,4 +93,6 @@ Examples (crontab):
 
 # Weekly on Sunday 03:00 – purge old logs per RetentionPolicy
 0 3 * * 0 /usr/bin/python /path/to/django-postgres-backend/manage.py purge_logs
-```
+
+#medicine forms are renamed as the HSN code inside the catalog app
+|_catalog(models)
