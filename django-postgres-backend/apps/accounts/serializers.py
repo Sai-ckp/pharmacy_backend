@@ -66,3 +66,9 @@ class UserListSerializer(serializers.ModelSerializer):
     def get_userId(self, obj):
         return f"USR{obj.pk:03d}"
 
+
+class LoginSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField()
+    device_id = serializers.CharField(max_length=255)
+

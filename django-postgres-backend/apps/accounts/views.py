@@ -6,19 +6,21 @@ from django.core.mail import send_mail
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import PasswordResetOTP
+from core.models import get_current_license
+from .models import PasswordResetOTP, UserDevice
 from .serializers import (
     OTPRequestSerializer,
     OTPVerifySerializer,
     ResetPasswordSerializer,
     UserCreateSerializer,
     UserListSerializer,
+    LoginSerializer,
 )
 
 User = get_user_model()
@@ -49,6 +51,60 @@ def _send_otp_email(email: str, otp: str, minutes_valid: int = 15):
     )
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", settings.EMAIL_HOST_USER)
     send_mail(subject, message, from_email, [email], fail_silently=False)
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+    inactive_license_message = (
+        "Your license has expired or is inactive. Please contact support@ckpsoftware.com to renew your license."
+    )
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        username = serializer.validated_data["username"]
+        password = serializer.validated_data["password"]
+        device_id = serializer.validated_data["device_id"]
+
+        user = authenticate(request=request, username=username, password=password)
+        if not user:
+            return Response({"detail": "Invalid username or password."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        license_obj = get_current_license()
+        if not license_obj or not license_obj.is_active:
+            return Response({"detail": self.inactive_license_message}, status=status.HTTP_403_FORBIDDEN)
+
+        user_agent = request.META.get("HTTP_USER_AGENT", "")
+        device, created = UserDevice.objects.get_or_create(
+            user=user,
+            defaults={"device_id": device_id, "user_agent": user_agent},
+        )
+
+        if not created and device.device_id != device_id:
+            return Response(
+                {
+                    "detail": "This account is already registered on another device. To change your device, please contact support@ckpsoftware.com."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if created:
+            device.device_id = device_id
+        device.user_agent = user_agent
+        device.save(update_fields=["device_id", "user_agent", "last_login_at"])
+
+        refresh = RefreshToken.for_user(user)
+        payload = {
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": {"id": user.id, "username": user.get_username()},
+            "license": {
+                "days_left": license_obj.days_left,
+                "valid_to": license_obj.valid_to.isoformat(),
+            },
+        }
+        return Response(payload, status=status.HTTP_200_OK)
 
 # ----- User list / create -----------------------------------------------------
 

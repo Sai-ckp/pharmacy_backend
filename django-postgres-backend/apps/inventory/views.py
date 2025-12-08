@@ -35,6 +35,11 @@ from apps.sales.models import SalesLine
 from apps.transfers.models import TransferLine
 from apps.procurement.models import VendorReturn, PurchaseOrderLine, GoodsReceiptLine
 from apps.compliance.models import H1RegisterEntry, NDPSDailyEntry, RecallEvent
+from core.permissions import HasActiveSystemLicense
+
+
+LICENSED_PERMISSIONS = [permissions.IsAuthenticated, HasActiveSystemLicense]
+LICENSED_ADMIN_PERMISSIONS = [permissions.IsAdminUser, HasActiveSystemLicense]
 
 
 class HealthView(APIView):
@@ -95,7 +100,7 @@ class StockOnHandView(APIView):
 
 
 class MovementsCreateView(APIView):
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = LICENSED_ADMIN_PERMISSIONS
     @extend_schema(
         tags=["Inventory"],
         summary="Create an inventory movement (Admin)",
@@ -228,7 +233,7 @@ class ExpiringView(APIView):
 
 
 class ExpiryAlertsView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     @extend_schema(
         tags=["Inventory"],
@@ -491,7 +496,7 @@ class MedicineViewMixin:
 
 
 class AddMedicineView(MedicineViewMixin, APIView):
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = LICENSED_ADMIN_PERMISSIONS
     @extend_schema(
         tags=["Inventory"],
         summary="Add new medicine (master + first batch) in one call (Admin)",
@@ -576,7 +581,7 @@ class AddMedicineView(MedicineViewMixin, APIView):
 
 
 class MedicineDetailView(MedicineViewMixin, APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     def get_batch(self, batch_id: int) -> BatchLot:
         return BatchLot.objects.select_related(
@@ -664,7 +669,7 @@ class MedicinesListView(APIView):
     Aggregate view used by the UI to show current medicines/stock per batch at a location.
     """
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     @extend_schema(
         tags=["Inventory"],
@@ -766,7 +771,7 @@ class MedicinesListView(APIView):
 
 
 class GlobalMedicinesView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     @extend_schema(
         tags=["Inventory"],

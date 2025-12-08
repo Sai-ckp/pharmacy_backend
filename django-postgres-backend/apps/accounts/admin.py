@@ -1,4 +1,10 @@
 from django.contrib import admin
 
-# Register your models here (Day 1: none)
+from .models import UserDevice
+
+
+@admin.register(UserDevice)
+class UserDeviceAdmin(admin.ModelAdmin):
+    list_display = ("user", "device_id", "last_login_at")
+    search_fields = ("user__username", "user__email", "device_id")
 

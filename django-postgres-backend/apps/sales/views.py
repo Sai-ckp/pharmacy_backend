@@ -17,11 +17,15 @@ from apps.settingsx.services import next_doc_number
 from apps.settingsx.models import TaxBillingSettings, DocCounter
 from apps.inventory.models import InventoryMovement
 from apps.catalog.models import Product, BatchLot
+from core.permissions import HasActiveSystemLicense
+
+
+LICENSED_PERMISSIONS = [IsAuthenticated, HasActiveSystemLicense]
 
 class SalesInvoiceViewSet(viewsets.ModelViewSet):
     queryset = SalesInvoice.objects.all().select_related("customer", "location", "posted_by", "created_by")
     serializer_class = SalesInvoiceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["status", "customer", "location"]
     search_fields = ["invoice_no", "customer__name"]
@@ -109,7 +113,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         summary="Printable HTML for invoice",
         responses={200: OpenApiTypes.STR},
     )
-    @action(detail=True, methods=["get"], url_path="print", permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["get"], url_path="print", permission_classes=LICENSED_PERMISSIONS)
     def print_view(self, request, pk=None):
         inv = self.get_object()
         html = self._render_invoice_html(inv)
@@ -120,7 +124,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         summary="Download HTML invoice (attachment)",
         responses={200: OpenApiTypes.STR},
     )
-    @action(detail=True, methods=["get"], url_path="download", permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["get"], url_path="download", permission_classes=LICENSED_PERMISSIONS)
     def download(self, request, pk=None):
         inv = self.get_object()
         from django.http import HttpResponse
@@ -135,7 +139,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         summary="Download PDF invoice",
         responses={200: OpenApiTypes.BINARY, 501: OpenApiTypes.OBJECT},
     )
-    @action(detail=True, methods=["get"], url_path="pdf", permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["get"], url_path="pdf", permission_classes=LICENSED_PERMISSIONS)
     def pdf(self, request, pk=None):
         inv = self.get_object()
         html = self._render_invoice_html(inv)
@@ -175,7 +179,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
         ],
         responses={200: OpenApiTypes.STR},
     )
-    @action(detail=False, methods=["get"], url_path="export", permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=["get"], url_path="export", permission_classes=LICENSED_PERMISSIONS)
     def export_csv(self, request):
         qs = self.filter_queryset(self.get_queryset())
         import csv
@@ -279,7 +283,7 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
 class SalesPaymentViewSet(viewsets.ModelViewSet):
     queryset = SalesPayment.objects.all().select_related("sale_invoice", "received_by")
     serializer_class = SalesPaymentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     def perform_create(self, serializer):
         # atomic to ensure payment saved and invoice totals updated together
@@ -290,7 +294,7 @@ class SalesPaymentViewSet(viewsets.ModelViewSet):
 
 
 class BillingStatsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     @extend_schema(
         tags=["Sales"],
@@ -321,7 +325,7 @@ class BillingStatsView(APIView):
 
 
 class MedicinesSuggestView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     @extend_schema(
         tags=["Sales"],
@@ -366,7 +370,7 @@ class MedicinesSuggestView(APIView):
 
 
 class InvoiceQuoteView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = LICENSED_PERMISSIONS
 
     @extend_schema(
         tags=["Sales"],

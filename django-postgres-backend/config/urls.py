@@ -4,11 +4,13 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
+from apps.accounts.views import LoginView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
     # Auth (JWT)
+    path("api/auth/login/", LoginView.as_view(), name="api_auth_login"),
     path("api/v1/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("api/v1/auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     # Dev B apps
