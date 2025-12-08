@@ -515,17 +515,24 @@ class MedicineViewMixin:
         return {"id": obj.id, "name": getattr(obj, "name", "")}
 
     def _serialize_product(self, product: Product) -> dict:
+        # Get category object - must return object with id and name for MasterRefSerializer
+        # _ref returns None if object is None, but MasterRefSerializer needs an object
+        category_obj = self._ref(product.category)
+        if not category_obj:
+            # Return a default object if category is None
+            category_obj = {"id": 0, "name": ""}
+        
         return {
             "id": product.id,
             "code": product.code,
             "name": product.name,
             "generic_name": product.generic_name,
             "strength": product.dosage_strength,
-            "category": self._ref(product.category),
-            "form": self._ref(product.medicine_form),
-            "base_uom": self._ref(product.base_uom),
-            "selling_uom": self._ref(product.selling_uom),
-            "rack_location": self._ref(product.rack_location),
+            "category": category_obj,  # Must be object with id and name for MasterRefSerializer
+            "form": self._ref(product.medicine_form) or {"id": 0, "name": ""},
+            "base_uom": self._ref(product.base_uom) or {"id": 0, "name": ""},
+            "selling_uom": self._ref(product.selling_uom) or {"id": 0, "name": ""},
+            "rack_location": self._ref(product.rack_location) or {"id": 0, "name": ""},
             "gst_percent": str(product.gst_percent or Decimal("0")),
             "description": product.description or "",
             "storage_instructions": product.storage_instructions or "",
@@ -564,6 +571,16 @@ class MedicineViewMixin:
         }
 
     def _serialize_batch(self, batch: BatchLot, stock_base: Decimal) -> dict:
+        # Infer stock_unit from quantity_uom
+        stock_unit = None
+        if batch.quantity_uom:
+            uom_name = (batch.quantity_uom.name or "").strip().upper()
+            # Check if it's a box type UOM
+            if uom_name in {"BOX", "BOXES", "CARTON", "CARTONS", "PACK", "PACKS"}:
+                stock_unit = "box"
+            else:
+                stock_unit = "loose"
+        
         return {
             "id": batch.id,
             "batch_number": batch.batch_no,
@@ -572,6 +589,7 @@ class MedicineViewMixin:
             "expiry_date": batch.expiry_date,
             "quantity": f"{batch.initial_quantity:.3f}",
             "quantity_uom": self._ref(batch.quantity_uom),
+            "stock_unit": stock_unit,  # Add stock_unit to response
             "base_quantity": f"{batch.initial_quantity_base:.3f}",
             "purchase_price": f"{batch.purchase_price:.2f}",
             "purchase_price_per_base": f"{batch.purchase_price_per_base:.6f}",
@@ -637,12 +655,14 @@ class AddMedicineView(MedicineViewMixin, APIView):
         qty_base = Decimal(batch_payload["quantity_base"])
 
         movement_id = None
-        if qty_base > 0:
+        # Allow both positive (add stock) and negative (reduce stock) quantities
+        if qty_base != 0:
+            reason = "ADJUSTMENT" if qty_base > 0 else "ADJUSTMENT"  # Use ADJUSTMENT for both
             movement_id = write_movement(
                 location_id=int(location_id),
                 batch_lot_id=batch.id,
-                qty_change_base=qty_base,
-                reason="ADJUSTMENT",
+                qty_change_base=qty_base,  # Can be negative to reduce stock
+                reason=reason,
                 ref_doc=("OPENING_STOCK", 0),
                 actor=request.user if request.user.is_authenticated else None,
             )
@@ -717,7 +737,25 @@ class MedicineDetailView(MedicineViewMixin, APIView):
         if not medicine_payload.get("id"):
             medicine_payload["id"] = batch.product_id
         product = self._upsert_product(medicine_payload)
+        
+        # Calculate stock difference if quantity changed
+        old_qty_base = batch.initial_quantity_base
         updated_batch = self._update_batch(batch, batch_payload)
+        new_qty_base = Decimal(batch_payload.get("quantity_base", updated_batch.initial_quantity_base))
+        qty_diff = new_qty_base - old_qty_base
+        
+        # Create movement if quantity changed (can be positive or negative)
+        movement_id = None
+        if qty_diff != 0 and location_id:
+            movement_id = write_movement(
+                location_id=int(location_id),
+                batch_lot_id=updated_batch.id,
+                qty_change_base=qty_diff,  # Can be negative to reduce stock
+                reason="ADJUSTMENT",
+                ref_doc=("STOCK_UPDATE", batch_id),
+                actor=request.user if request.user.is_authenticated else None,
+            )
+        
         stock_qty = stock_on_hand(location_id, updated_batch.id) if location_id else Decimal("0")
         stock_state = stock_status_for_quantity(stock_qty)
         response_payload = {
@@ -725,6 +763,7 @@ class MedicineDetailView(MedicineViewMixin, APIView):
             "batch": self._serialize_batch(updated_batch, stock_qty),
             "inventory": {
                 "location_id": location_id,
+                "movement_id": movement_id,
                 "stock_status": stock_state,
                 "stock_on_hand_base": f"{stock_qty:.3f}",
             },

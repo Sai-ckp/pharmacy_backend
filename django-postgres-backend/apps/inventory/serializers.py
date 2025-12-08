@@ -491,6 +491,16 @@ class AddMedicineRequestSerializer(serializers.Serializer):
                 # This is a fallback - quantity_uom will be inferred in convert_quantity_to_base
                 pass
         
+        # Debug: Log packaging fields to verify they're being received
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"AddMedicine: quantity={quantity}, stock_unit={batch.get('stock_unit')}, "
+                   f"tablets_per_strip={medicine.get('tablets_per_strip')}, "
+                   f"strips_per_box={medicine.get('strips_per_box')}, "
+                   f"capsules_per_strip={medicine.get('capsules_per_strip')}, "
+                   f"category={medicine.get('category')}, "
+                   f"quantity_uom={quantity_uom}")
+        
         qty_base, factor = convert_quantity_to_base(
             quantity=quantity,
             base_uom=medicine.get("base_uom"),
@@ -518,6 +528,8 @@ class AddMedicineRequestSerializer(serializers.Serializer):
             doses_per_inhaler=medicine.get("doses_per_inhaler"),
             inhalers_per_box=medicine.get("inhalers_per_box"),
         )
+        
+        logger.info(f"AddMedicine: Calculated qty_base={qty_base}, factor={factor}")
         batch["quantity_base"] = qty_base
         batch["conversion_factor"] = qty_base
         batch["unit_factor"] = factor

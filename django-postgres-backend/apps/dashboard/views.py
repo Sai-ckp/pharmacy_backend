@@ -61,7 +61,15 @@ class DashboardSummaryView(BaseDashboardView):
             location = Location.objects.filter(id=location_id).first()
             location_name = location.name if location else None
 
-        total_medicines = Product.objects.filter(is_active=True).count()
+        # Use global_inventory_rows to count unique medicines (products with batches)
+        from apps.inventory.services import global_inventory_rows
+        global_medicines = global_inventory_rows(location_id=location_id)
+        # Get unique product IDs from global inventory
+        unique_product_ids = set()
+        for item in global_medicines:
+            if item.get("product_id"):
+                unique_product_ids.add(item["product_id"])
+        total_medicines = len(unique_product_ids)
 
         low_stock_rows = []
         inventory_status = {"in_stock": 0, "low_stock": 0, "out_of_stock": 0}

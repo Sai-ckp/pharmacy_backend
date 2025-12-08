@@ -77,9 +77,15 @@ def convert_quantity_to_base(
     """
     Convert quantity expressed in quantity_uom into base units.
     Returns (base_quantity, factor_used).
+    Note: quantity can be negative for stock reduction.
     """
-    if quantity < 0:
-        raise ValidationError({"quantity": "Quantity must be >= 0"})
+    # Allow negative quantities for stock reduction
+    is_negative = quantity < 0
+    quantity_abs = abs(Decimal(quantity))
+    
+    # Helper function to apply sign to result
+    def apply_sign(result, factor):
+        return (-result if is_negative else result, factor)
     
     # If quantity_uom is not provided, infer from stock_unit and packaging fields
     if not quantity_uom:
@@ -89,97 +95,126 @@ def convert_quantity_to_base(
             if (tablets_per_strip or capsules_per_strip) and strips_per_box:
                 per_strip = tablets_per_strip or capsules_per_strip
                 factor = Decimal(per_strip) * Decimal(strips_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                # Debug logging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"convert_quantity_to_base: stock_unit=box, quantity={quantity_abs}, "
+                           f"tablets_per_strip={per_strip}, strips_per_box={strips_per_box}, "
+                           f"factor={factor}, result={result}")
+                return apply_sign(result, factor)
             # Liquid (syrup, drops, spray, etc.)
             elif ml_per_bottle and bottles_per_box:
                 factor = ml_per_bottle * Decimal(bottles_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Injection/Vial
             elif ml_per_vial and vials_per_box:
                 factor = ml_per_vial * Decimal(vials_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             elif vials_per_box:
                 factor = Decimal(vials_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Ointment/Cream/Gel
             elif grams_per_tube and tubes_per_box:
                 factor = grams_per_tube * Decimal(tubes_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Powder/Sachet
             elif grams_per_sachet and sachets_per_box:
                 factor = grams_per_sachet * Decimal(sachets_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Soap/Bar
             elif grams_per_bar and bars_per_box:
                 factor = grams_per_bar * Decimal(bars_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Pack/Generic
             elif pieces_per_pack and packs_per_box:
                 factor = Decimal(pieces_per_pack) * Decimal(packs_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Gloves
             elif pairs_per_pack and packs_per_box:
                 factor = Decimal(pairs_per_pack) * Decimal(packs_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Cotton/Gauze
             elif grams_per_pack and packs_per_box:
                 factor = grams_per_pack * Decimal(packs_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Inhaler
             elif doses_per_inhaler and inhalers_per_box:
                 factor = Decimal(doses_per_inhaler) * Decimal(inhalers_per_box)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Fallback: use units_per_pack if available
             if units_per_pack and units_per_pack > 0:
-                return Decimal(quantity) * units_per_pack, units_per_pack
+                result = quantity_abs * units_per_pack
+                return apply_sign(result, units_per_pack)
         
         elif stock_unit == "loose":
             # For loose, calculate from per-unit packaging fields
             # Tablet/Capsule
             if tablets_per_strip:
                 factor = Decimal(tablets_per_strip)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             elif capsules_per_strip:
                 factor = Decimal(capsules_per_strip)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Liquid
             elif ml_per_bottle:
                 factor = ml_per_bottle
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Injection/Vial
             elif ml_per_vial:
                 factor = ml_per_vial
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Ointment/Cream/Gel
             elif grams_per_tube:
                 factor = grams_per_tube
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Powder/Sachet
             elif grams_per_sachet:
                 factor = grams_per_sachet
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Soap/Bar
             elif grams_per_bar:
                 factor = grams_per_bar
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Pack/Generic
             elif pieces_per_pack:
                 factor = Decimal(pieces_per_pack)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Gloves
             elif pairs_per_pack:
                 factor = Decimal(pairs_per_pack)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Cotton/Gauze
             elif grams_per_pack:
                 factor = grams_per_pack
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Inhaler
             elif doses_per_inhaler:
                 factor = Decimal(doses_per_inhaler)
-                return Decimal(quantity) * factor, factor
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
             # Fallback: assume quantity is already in base units
-            return Decimal(quantity), Decimal("1")
+            return apply_sign(quantity_abs, Decimal("1"))
         
         # If no stock_unit, try to infer from units_per_pack
         if units_per_pack and units_per_pack > 1 and selling_uom:
@@ -189,12 +224,79 @@ def convert_quantity_to_base(
         else:
             # Last resort: use units_per_pack directly
             if units_per_pack and units_per_pack > 0:
-                return Decimal(quantity) * units_per_pack, units_per_pack
-            return Decimal(quantity), Decimal("1")
+                result = quantity_abs * units_per_pack
+                return apply_sign(result, units_per_pack)
+            return apply_sign(quantity_abs, Decimal("1"))
+    
+    # If quantity_uom is provided, check if we can use packaging fields directly
+    # This handles the case where base_uom might not be set but we have packaging info
+    if quantity_uom:
+        q_uom_name = (quantity_uom.name or "").strip().upper()
+        # If stock_unit is "box" and we have packaging fields, use them
+        if stock_unit == "box":
+            # Tablet/Capsule
+            if (tablets_per_strip or capsules_per_strip) and strips_per_box:
+                per_strip = tablets_per_strip or capsules_per_strip
+                factor = Decimal(per_strip) * Decimal(strips_per_box)
+                result = quantity_abs * factor
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"convert_quantity_to_base: Using packaging fields (quantity_uom provided), "
+                           f"quantity={quantity_abs}, factor={factor}, result={result}")
+                return apply_sign(result, factor)
+            # Liquid (syrup, drops, spray, etc.)
+            elif ml_per_bottle and bottles_per_box:
+                factor = ml_per_bottle * Decimal(bottles_per_box)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Injection/Vial
+            elif ml_per_vial and vials_per_box:
+                factor = ml_per_vial * Decimal(vials_per_box)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            elif vials_per_box:
+                factor = Decimal(vials_per_box)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Ointment/Cream/Gel
+            elif grams_per_tube and tubes_per_box:
+                factor = grams_per_tube * Decimal(tubes_per_box)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Powder/Sachet
+            elif grams_per_sachet and sachets_per_box:
+                factor = grams_per_sachet * Decimal(sachets_per_box)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Soap/Bar
+            elif grams_per_bar and bars_per_box:
+                factor = grams_per_bar * Decimal(bars_per_box)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Pack/Generic
+            elif pieces_per_pack and packs_per_box:
+                factor = Decimal(pieces_per_pack) * Decimal(packs_per_box)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Gloves
+            elif pairs_per_pack:
+                factor = Decimal(pairs_per_pack)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Cotton/Gauze
+            elif grams_per_pack:
+                factor = grams_per_pack
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
+            # Inhaler
+            elif doses_per_inhaler:
+                factor = Decimal(doses_per_inhaler)
+                result = quantity_abs * factor
+                return apply_sign(result, factor)
     
     if not base_uom:
         # If no base_uom, assume quantity is already in base units
-        return Decimal(quantity), Decimal("1")
+        return apply_sign(quantity_abs, Decimal("1"))
     
     if not selling_uom:
         # If no selling_uom, use base_uom
@@ -248,7 +350,8 @@ def convert_quantity_to_base(
 
     if factor <= 0:
         raise ValidationError({"units_per_pack": "Conversion factor must be > 0"})
-    return Decimal(quantity) * factor, factor
+    result = quantity_abs * factor
+    return apply_sign(result, factor)
 
 
 def _resolve_thresholds() -> tuple[Decimal | None, Decimal | None]:
