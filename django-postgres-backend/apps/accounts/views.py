@@ -3,6 +3,7 @@ import hashlib
 from datetime import timedelta
 from django.conf import settings
 from django.core.mail import send_mail
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -63,11 +64,16 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        username = serializer.validated_data["username"]
+        # accept either username or email for login (admin-created users often sign in with email)
+        identifier = serializer.validated_data["username"].strip()
         password = serializer.validated_data["password"]
         device_id = serializer.validated_data["device_id"]
 
-        user = authenticate(request=request, username=username, password=password)
+        user_obj = User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier)).first()
+        if not user_obj:
+            return Response({"detail": "Invalid username or password."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        user = authenticate(request=request, username=user_obj.get_username(), password=password)
         if not user:
             return Response({"detail": "Invalid username or password."}, status=status.HTTP_401_UNAUTHORIZED)
 
