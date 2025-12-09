@@ -739,13 +739,109 @@ class MedicineDetailView(MedicineViewMixin, APIView):
             medicine_payload["id"] = batch.product_id
         product = self._upsert_product(medicine_payload)
         
-        # Calculate stock difference using the serializer's calculated quantity_base
-        # Frontend sends total quantity (current + change), serializer converts to base units
-        # Compare new total base to old total base to get the difference
-        old_qty_base = batch.initial_quantity_base
-        updated_batch = self._update_batch(batch, batch_payload)
-        new_qty_base = Decimal(batch_payload.get("quantity_base", updated_batch.initial_quantity_base))
-        qty_diff = new_qty_base - old_qty_base
+        # Calculate stock difference: treat entered quantity as addition to CURRENT stock
+        # Get current stock on hand in base units (actual stock after all movements)
+        current_stock_base = stock_on_hand(location_id, batch.id) if location_id else Decimal("0")
+        
+        # Get the entered quantity from payload
+        entered_qty_ui = Decimal(str(batch_payload.get("quantity", 0)))
+        stock_unit_new = batch_payload.get("stock_unit") or "loose"
+        
+        # Infer old stock unit from batch's quantity_uom (batch doesn't have stock_unit field)
+        stock_unit_old = "loose"
+        if batch.quantity_uom:
+            uom_name = (batch.quantity_uom.name or "").strip().upper()
+            if uom_name in {"BOX", "BOXES", "CARTON", "CARTONS", "PACK", "PACKS"}:
+                stock_unit_old = "box"
+            else:
+                stock_unit_old = "loose"
+        
+        # Handle None values for UOMs
+        base_uom = product.base_uom if hasattr(product, 'base_uom') else None
+        selling_uom = product.selling_uom if hasattr(product, 'selling_uom') else None
+        
+        # Calculate the quantity change based on whether stock units match
+        if stock_unit_new == stock_unit_old:
+            # Same stock unit: frontend sends total (current + change)
+            # Calculate change: new_total_base - current_stock_base
+            try:
+                new_total_base, _ = convert_quantity_to_base(
+                    quantity=entered_qty_ui,
+                    base_uom=base_uom,
+                    selling_uom=selling_uom,
+                    quantity_uom=batch_payload.get("quantity_uom"),
+                    units_per_pack=product.units_per_pack or Decimal("1"),
+                    stock_unit=stock_unit_new,
+                    tablets_per_strip=medicine_payload.get("tablets_per_strip"),
+                    capsules_per_strip=medicine_payload.get("capsules_per_strip"),
+                    strips_per_box=medicine_payload.get("strips_per_box"),
+                    ml_per_bottle=medicine_payload.get("ml_per_bottle"),
+                    bottles_per_box=medicine_payload.get("bottles_per_box"),
+                    ml_per_vial=medicine_payload.get("ml_per_vial"),
+                    grams_per_tube=medicine_payload.get("grams_per_tube"),
+                    tubes_per_box=medicine_payload.get("tubes_per_box"),
+                    vials_per_box=medicine_payload.get("vials_per_box"),
+                    grams_per_sachet=medicine_payload.get("grams_per_sachet"),
+                    sachets_per_box=medicine_payload.get("sachets_per_box"),
+                    grams_per_bar=medicine_payload.get("grams_per_bar"),
+                    bars_per_box=medicine_payload.get("bars_per_box"),
+                    pieces_per_pack=medicine_payload.get("pieces_per_pack"),
+                    packs_per_box=medicine_payload.get("packs_per_box"),
+                    pairs_per_pack=medicine_payload.get("pairs_per_pack"),
+                    grams_per_pack=medicine_payload.get("grams_per_pack"),
+                    doses_per_inhaler=medicine_payload.get("doses_per_inhaler"),
+                    inhalers_per_box=medicine_payload.get("inhalers_per_box"),
+                )
+                # Calculate difference: new total - current stock
+                qty_diff = new_total_base - current_stock_base
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error converting quantity to base: {e}", exc_info=True)
+                raise serializers.ValidationError({
+                    "quantity": f"Error calculating stock: {str(e)}"
+                })
+        else:
+            # Different stock unit: frontend sends just the change amount (not total)
+            # Convert the entered quantity directly to base units and add to current stock
+            try:
+                qty_change_base, _ = convert_quantity_to_base(
+                    quantity=entered_qty_ui,  # This is the change amount, not total
+                    base_uom=base_uom,
+                    selling_uom=selling_uom,
+                    quantity_uom=batch_payload.get("quantity_uom"),
+                    units_per_pack=product.units_per_pack or Decimal("1"),
+                    stock_unit=stock_unit_new,  # Use new stock unit for conversion
+                    tablets_per_strip=medicine_payload.get("tablets_per_strip"),
+                    capsules_per_strip=medicine_payload.get("capsules_per_strip"),
+                    strips_per_box=medicine_payload.get("strips_per_box"),
+                    ml_per_bottle=medicine_payload.get("ml_per_bottle"),
+                    bottles_per_box=medicine_payload.get("bottles_per_box"),
+                    ml_per_vial=medicine_payload.get("ml_per_vial"),
+                    grams_per_tube=medicine_payload.get("grams_per_tube"),
+                    tubes_per_box=medicine_payload.get("tubes_per_box"),
+                    vials_per_box=medicine_payload.get("vials_per_box"),
+                    grams_per_sachet=medicine_payload.get("grams_per_sachet"),
+                    sachets_per_box=medicine_payload.get("sachets_per_box"),
+                    grams_per_bar=medicine_payload.get("grams_per_bar"),
+                    bars_per_box=medicine_payload.get("bars_per_box"),
+                    pieces_per_pack=medicine_payload.get("pieces_per_pack"),
+                    packs_per_box=medicine_payload.get("packs_per_box"),
+                    pairs_per_pack=medicine_payload.get("pairs_per_pack"),
+                    grams_per_pack=medicine_payload.get("grams_per_pack"),
+                    doses_per_inhaler=medicine_payload.get("doses_per_inhaler"),
+                    inhalers_per_box=medicine_payload.get("inhalers_per_box"),
+                )
+                # When units differ, the entered quantity is the change amount
+                # Add it directly to current stock
+                qty_diff = qty_change_base
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error converting quantity to base: {e}", exc_info=True)
+                raise serializers.ValidationError({
+                    "quantity": f"Error calculating stock: {str(e)}"
+                })
         
         # Update the batch with the new total quantity
         updated_batch = self._update_batch(batch, batch_payload)
