@@ -1,4 +1,4 @@
-name: Deploy Django Backend to Azure App Service
+name: Deploy Django Backend to Azure App Service (Pharma)
 
 on:
   push:
@@ -8,9 +8,10 @@ on:
 env:
   # Django settings module
   DJANGO_SETTINGS_MODULE: pharmacy_backend.settings
-  # Project root directory
+  # Project root directory (where manage.py and requirements.txt are)
   PROJECT_ROOT: django-postgres-backend
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: '3.10'
+  AZURE_WEBAPP_NAME: Pharma
 
 jobs:
   build-and-deploy:
@@ -55,7 +56,7 @@ jobs:
       - name: Deploy to Azure Web App
         uses: Azure/webapps-deploy@v3
         with:
-          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_PHARMA }}
           package: ${{ env.PROJECT_ROOT }}
 
