@@ -1,0 +1,61 @@
+name: Deploy Django Backend to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  # Django settings module
+  DJANGO_SETTINGS_MODULE: pharmacy_backend.settings
+  # Project root directory
+  PROJECT_ROOT: django-postgres-backend
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Collect static files
+        working-directory: ${{ env.PROJECT_ROOT }}
+        env:
+          SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DEBUG: ${{ secrets.DJANGO_DEBUG }}
+          ALLOWED_HOSTS: ${{ secrets.DJANGO_ALLOWED_HOSTS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python manage.py collectstatic --noinput
+
+      - name: Run tests (optional)
+        working-directory: ${{ env.PROJECT_ROOT }}
+        env:
+          SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          DEBUG: ${{ secrets.DJANGO_DEBUG }}
+          ALLOWED_HOSTS: ${{ secrets.DJANGO_ALLOWED_HOSTS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python manage.py test
+        continue-on-error: true
+
+      - name: Deploy to Azure Web App
+        uses: Azure/webapps-deploy@v3
+        with:
+          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.PROJECT_ROOT }}
+

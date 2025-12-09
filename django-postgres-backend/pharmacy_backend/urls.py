@@ -5,10 +5,13 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from django.conf import settings
 from django.conf.urls.static import static
 from apps.accounts.views import LoginView
+from core.views import HealthCheckView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
+    # Health check endpoint for Azure/App Service
+    path("api/health/", HealthCheckView.as_view(), name="api_health"),
     # Auth (JWT)
     path("api/auth/login/", LoginView.as_view(), name="api_auth_login"),
     path("api/v1/auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),

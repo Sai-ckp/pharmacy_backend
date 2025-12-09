@@ -1,5 +1,5 @@
 Django==4.2
-psycopg[binary]
+psycopg2-binary
 djangorestframework==3.14.0
 python-decouple==3.5
 django-environ==0.8.1
@@ -9,6 +9,10 @@ django-filter==24.3
 djangorestframework-simplejwt==5.3.1
 WeasyPrint==53.3
 xhtml2pdf==0.2.15
+python-dotenv
+dj-database-url
+whitenoise
+gunicorn
 
 # Add missing dependencies required for your PDF extraction
 pdfplumber

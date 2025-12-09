@@ -5,6 +5,28 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
+# Environment variables
+.env
 
-.pytest_cache/
-.mypy_cache/
+# Django
+*.log
+*.pot
+*.pyc
+__pycache__/
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+/media
+/staticfiles
+/static
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
