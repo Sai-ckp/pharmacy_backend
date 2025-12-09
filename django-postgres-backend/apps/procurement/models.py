@@ -170,6 +170,7 @@ class PurchaseOrderLine(models.Model):
     qty_packs_ordered = models.IntegerField()
     expected_unit_cost = models.DecimalField(max_digits=14, decimal_places=2)
     gst_percent_override = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    category = models.CharField(max_length=64, blank=True, help_text="Category ID from frontend (e.g., 'tablet', 'capsule', 'syrup')")
 
 
 class GoodsReceipt(models.Model):

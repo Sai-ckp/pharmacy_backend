@@ -55,6 +55,8 @@ class VendorReturnSerializer(serializers.ModelSerializer):
 
 
 class PurchaseOrderLineSerializer(serializers.ModelSerializer):
+    category = serializers.CharField(required=False, allow_blank=True)
+    
     class Meta:
         model = PurchaseOrderLine
         fields = "__all__"
@@ -199,7 +201,8 @@ class GoodsReceiptLineSerializer(serializers.ModelSerializer):
         if new_product:
             product_id = new_product.get("product_id") or new_product.get("id")
             if not product_id:
-                required = ["name", "base_unit", "pack_unit", "units_per_pack", "mrp", "medicine_form"]
+                # Required fields (medicine_form is optional, will be set to None if not provided)
+                required = ["name", "base_unit", "pack_unit", "units_per_pack", "mrp"]
                 missing = [field for field in required if not new_product.get(field)]
                 if missing:
                     raise serializers.ValidationError(

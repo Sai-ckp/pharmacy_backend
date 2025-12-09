@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.db.models import Sum
 
-from apps.catalog.models import BatchLot, Product
+from apps.catalog.models import BatchLot, Product, ProductCategory
 from apps.catalog.services import packs_to_base
 from apps.inventory.services import write_movement, convert_quantity_to_base
 from apps.inventory.models import RackRule
@@ -272,13 +272,62 @@ def _create_or_update_product_from_payload(payload: dict, default_vendor_id=None
     if not product and name:
         product = Product.objects.filter(name__iexact=name).first()
 
+    # Handle category - can be ID (int), name (str), or None
+    category_value = payload.get("category") or payload.get("category_id")
+    category_id = None
+    if category_value is not None:
+        try:
+            # Try to treat as integer ID
+            category_id = int(category_value)
+            # Verify it exists
+            if not ProductCategory.objects.filter(id=category_id).exists():
+                category_id = None
+        except (ValueError, TypeError):
+            # Not a number - treat as category name
+            # Map frontend category string IDs to database category names
+            CATEGORY_MAPPING = {
+                'tablet': 'Tablet',
+                'capsule': 'Capsule',
+                'syrup': 'Syrup/Suspension',
+                'injection': 'Injection/Vial',
+                'ointment': 'Ointment/Cream',
+                'drops': 'Drops (Eye/Ear/Nasal)',
+                'inhaler': 'Inhaler',
+                'powder': 'Powder/Sachet',
+                'gel': 'Gel',
+                'spray': 'Spray',
+                'lotion': 'Lotion/Solution',
+                'shampoo': 'Shampoo',
+                'soap': 'Soap/Bar',
+                'bandage': 'Bandage/Dressing',
+                'mask': 'Mask (Surgical/N95)',
+                'gloves': 'Gloves',
+                'cotton': 'Cotton/Gauze',
+                'sanitizer': 'Hand Sanitizer',
+                'thermometer': 'Thermometer',
+                'supplement': 'Supplement/Vitamin',
+                'other': 'Other/Miscellaneous',
+            }
+            category_name = None
+            if isinstance(category_value, str) and category_value.lower() in CATEGORY_MAPPING:
+                category_name = CATEGORY_MAPPING[category_value.lower()]
+            else:
+                category_name = str(category_value)
+            
+            # Find or create the category
+            category_obj, created = ProductCategory.objects.get_or_create(
+                name=category_name,
+                defaults={'is_active': True}
+            )
+            category_id = category_obj.id
+
     fields = {
         "name": name,
         "generic_name": payload.get("generic_name"),
         "dosage_strength": payload.get("dosage_strength"),
         "hsn": payload.get("hsn"),
         "schedule": payload.get("schedule") or Product.Schedule.OTC,
-        "category_id": payload.get("category") or payload.get("category_id"),
+        "category_id": category_id,
         "medicine_form_id": payload.get("medicine_form"),
         "pack_size": payload.get("pack_size"),
         "manufacturer": payload.get("manufacturer"),
