@@ -5,6 +5,17 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+class CurrentUserSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ("id", "email", "full_name", "is_active")  # keep same
+
+    def get_full_name(self, obj):
+        # Build full name safely
+        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
 
 # -----------------------------
 # OK Serializer

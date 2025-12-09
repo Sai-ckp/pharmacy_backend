@@ -3,7 +3,7 @@ from django.urls import path
 
 from .views import (
     UsersListCreateView,
-         # <-- import the new view
+    CurrentUserView,  # <-- import the new view
     ForgotPasswordView,
     VerifyOTPView,
     ResetPasswordView,
@@ -14,7 +14,7 @@ from .views import (
 urlpatterns = [
     path("", HealthView.as_view()),
     path("users/", UsersListCreateView.as_view()),          # list + create
-     # detail: get, delete
+    path("users/me/", CurrentUserView.as_view()),  
     path("forgot-password/", ForgotPasswordView.as_view()),
     path("verify-otp/", VerifyOTPView.as_view()),
     path("reset-password/", ResetPasswordView.as_view()),

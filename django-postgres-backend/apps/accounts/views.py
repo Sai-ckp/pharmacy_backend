@@ -13,6 +13,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import PasswordResetOTP
+from .serializers import CurrentUserSerializer
 from .serializers import (
     OTPRequestSerializer,
     OTPVerifySerializer,
@@ -318,3 +319,13 @@ class LogoutView(APIView):
             )
 
         return Response({"detail": "Logged out."}, status=status.HTTP_200_OK)
+
+class CurrentUserView(APIView):
+    """
+    GET /api/v1/accounts/users/me/ -> info about the logged-in user
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        serializer = CurrentUserSerializer(request.user)
+        return Response(serializer.data)
