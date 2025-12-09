@@ -56,7 +56,20 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "insecure-default-change-me")
 DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
 
 # Read ALLOWED_HOSTS from environment variable
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
+# Default includes localhost and Azure health probe IP
+default_hosts = "localhost,127.0.0.1,169.254.130.3"
+allowed_hosts_str = os.environ.get("ALLOWED_HOSTS", default_hosts)
+ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_str.split(",") if h.strip()]
+
+# Add Azure website hostname if available (Azure sets WEBSITE_HOSTNAME)
+azure_hostname = os.environ.get("WEBSITE_HOSTNAME")
+if azure_hostname and azure_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(azure_hostname)
+    # Also add the plain hostname without region suffix if it exists
+    if ".azurewebsites.net" in azure_hostname:
+        plain_hostname = azure_hostname.split(".")[0] + ".azurewebsites.net"
+        if plain_hostname not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(plain_hostname)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
