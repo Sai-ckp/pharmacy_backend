@@ -1,11 +1,17 @@
 import re
+import os
 from decimal import Decimal, InvalidOperation
 from dateutil import parser as dateparser
 import pdfplumber
 import pytesseract
 from PIL import Image
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Only set tesseract path on Windows (Azure/Linux has it in PATH)
+if os.name == 'nt':  # Windows
+    tesseract_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.path.exists(tesseract_path):
+        pytesseract.pytesseract.tesseract_cmd = tesseract_path
+# On Linux/Azure, tesseract should be installed and available in PATH
 
 
 # ---------------------------------------------------------
