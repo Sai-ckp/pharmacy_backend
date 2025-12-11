@@ -599,31 +599,79 @@ class PurchaseImportView(APIView):
             vendor = get_object_or_404(Vendor, pk=vendor_id)
             location = get_object_or_404(Location, pk=location_id)
 
+            # Get file name and extension
+            file_name = getattr(file, 'name', '') or ''
+            
+            # Detect file type from extension, fallback to content_type if no extension
+            ext = None
+            file_name_lower = file_name.lower() if file_name else ''
+            
+            if file_name and '.' in file_name_lower:
+                ext = file_name_lower.split(".")[-1].strip()
+            else:
+                # Fallback: try to detect from content_type
+                content_type = getattr(file, 'content_type', '') or ''
+                content_type_lower = content_type.lower()
+                if 'pdf' in content_type_lower:
+                    ext = 'pdf'
+                elif 'csv' in content_type_lower or 'text/csv' in content_type_lower:
+                    ext = 'csv'
+                elif 'excel' in content_type_lower or 'spreadsheet' in content_type_lower:
+                    ext = 'xlsx'
+            
+            if ext not in ["pdf", "csv", "xlsx", "xls"]:
+                return Response({"detail": f"Unsupported file type. File: {file_name or 'unknown'}, Detected: {ext or 'none'}. Supported types are: CSV, PDF, XLSX, XLS"}, status=400)
+
             # Create a temporary file on local filesystem (works on both local and Azure)
             # Azure App Service has a temp directory at /tmp or /local/temp
-            suffix = os.path.splitext(file.name)[1] or ''
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode='wb') as tmp_file:
-                # Read and write the uploaded file content to temporary file
-                for chunk in file.chunks():
-                    tmp_file.write(chunk)
-                tmp_file_path = tmp_file.name
+            suffix = os.path.splitext(file_name)[1] or f'.{ext}'
+            try:
+                # Create temporary file with appropriate suffix
+                suffix = f'.{ext}' if not file_name or '.' not in file_name else os.path.splitext(file_name)[1]
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode='wb') as tmp_file:
+                    # Read and write the uploaded file content to temporary file
+                    for chunk in file.chunks():
+                        tmp_file.write(chunk)
+                    tmp_file_path = tmp_file.name
+                    
+                # Verify the file was written
+                if not os.path.exists(tmp_file_path):
+                    return Response({"detail": "Failed to save uploaded file. Please try again."}, status=500)
+                file_size = os.path.getsize(tmp_file_path)
+                if file_size == 0:
+                    return Response({"detail": "Uploaded file is empty. Please ensure the file contains data."}, status=400)
+            except Exception as file_error:
+                logger.error(f"Error creating temporary file: {file_error}", exc_info=True)
+                return Response({"detail": f"Failed to process uploaded file: {str(file_error)}"}, status=500)
 
-            # Detect file type
-            ext = file.name.lower().split(".")[-1]
+            # Process file based on type
+            try:
+                if ext == "pdf":
+                    logger.info(f"Processing PDF file: {tmp_file_path}, size: {os.path.getsize(tmp_file_path)}")
+                    items = extract_purchase_items_from_pdf(tmp_file_path)
+                    logger.info(f"PDF processing completed, found {len(items) if items else 0} items")
 
-            if ext == "pdf":
-                items = extract_purchase_items_from_pdf(tmp_file_path)
+                elif ext == "csv":
+                    logger.info(f"Processing CSV file: {tmp_file_path}, size: {os.path.getsize(tmp_file_path)}")
+                    from .utils import extract_items_from_csv
+                    items = extract_items_from_csv(tmp_file_path)
+                    logger.info(f"CSV processing completed, found {len(items) if items else 0} items")
 
-            elif ext == "csv":
-                from .utils import extract_items_from_csv
-                items = extract_items_from_csv(tmp_file_path)
-
-            elif ext in ["xlsx", "xls"]:
-                from .utils import extract_items_from_excel
-                items = extract_items_from_excel(tmp_file_path)
-
-            else:
-                return Response({"detail": "Unsupported file type"}, status=400)
+                elif ext in ["xlsx", "xls"]:
+                    logger.info(f"Processing Excel file: {tmp_file_path}, size: {os.path.getsize(tmp_file_path)}")
+                    from .utils import extract_items_from_excel
+                    items = extract_items_from_excel(tmp_file_path)
+                    logger.info(f"Excel processing completed, found {len(items) if items else 0} items")
+            except ImportError as import_err:
+                logger.error(f"Missing dependency for {ext} file: {import_err}")
+                return Response({
+                    "detail": f"Failed to process {ext.upper()} file. Required library may not be installed: {str(import_err)}"
+                }, status=500)
+            except Exception as proc_err:
+                logger.error(f"Error processing {ext} file {tmp_file_path}: {proc_err}", exc_info=True)
+                return Response({
+                    "detail": f"Failed to process {ext.upper()} file: {str(proc_err)}. Please check the file format."
+                }, status=500)
 
             if not items:
                 return Response({"detail": "No items found in file"}, status=400)
@@ -700,8 +748,40 @@ class PurchaseImportView(APIView):
             }, status=201)
 
         except Exception as exc:
-            logger.exception("Error importing file: %s", exc)
-            return Response({"detail": "Import error", "error": str(exc)}, status=500)
+            logger.exception("Error importing file: %s", exc, exc_info=True)
+            error_msg = str(exc)
+            error_type = type(exc).__name__
+            
+            # Log detailed error information for debugging
+            logger.error(f"Import error - Type: {error_type}, Message: {error_msg}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
+            # Provide more helpful error messages
+            if "pdf" in error_msg.lower() or "pdfplumber" in error_msg.lower() or "No module named 'pdfplumber'" in error_msg:
+                return Response({
+                    "detail": f"Failed to process PDF file. Error: {error_msg}. The PDF processing library may not be installed on the server."
+                }, status=500)
+            elif "csv" in error_msg.lower():
+                return Response({
+                    "detail": f"Failed to process CSV file: {error_msg}. Please ensure the file is a valid CSV with proper formatting."
+                }, status=500)
+            elif "excel" in error_msg.lower() or "openpyxl" in error_msg.lower() or "No module named 'openpyxl'" in error_msg:
+                return Response({
+                    "detail": f"Failed to process Excel file. Error: {error_msg}. The Excel processing library may not be installed on the server."
+                }, status=500)
+            elif "permission" in error_msg.lower() or "Permission denied" in error_msg:
+                return Response({
+                    "detail": f"Permission error: {error_msg}. Please contact administrator."
+                }, status=500)
+            elif "No such file" in error_msg or "FileNotFoundError" in error_type:
+                return Response({
+                    "detail": f"File not found error: {error_msg}. The uploaded file may not have been saved correctly."
+                }, status=500)
+            else:
+                return Response({
+                    "detail": f"Failed to import file: {error_msg} (Error type: {error_type}). Please check server logs for more details."
+                }, status=500)
 
         finally:
             # Clean up temporary file

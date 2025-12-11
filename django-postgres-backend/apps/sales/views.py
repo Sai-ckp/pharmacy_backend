@@ -23,7 +23,7 @@ from core.permissions import HasActiveSystemLicense
 LICENSED_PERMISSIONS = [IsAuthenticated, HasActiveSystemLicense]
 
 class SalesInvoiceViewSet(viewsets.ModelViewSet):
-    queryset = SalesInvoice.objects.all().select_related("customer", "location", "posted_by", "created_by")
+    queryset = SalesInvoice.objects.all().select_related("customer", "location", "posted_by", "created_by", "payment_type").prefetch_related("payments")
     serializer_class = SalesInvoiceSerializer
     permission_classes = LICENSED_PERMISSIONS
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -100,6 +100,8 @@ class SalesInvoiceViewSet(viewsets.ModelViewSet):
             })
             pay_ser.is_valid(raise_exception=True)
             pay = pay_ser.save(received_by=request.user)
+            # Refresh invoice to get updated payment status
+            invoice.refresh_from_db()
         return Response({
             "invoice_no": invoice.invoice_no,
             "payment_id": pay.id,

@@ -127,6 +127,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         max_digits=14, decimal_places=4, read_only=True
     )
     payment_status = serializers.CharField(read_only=True)
+    payment_method_display = serializers.SerializerMethodField(read_only=True)
     round_off_amount = serializers.DecimalField(
         max_digits=14, decimal_places=4, read_only=True
     )
@@ -136,6 +137,21 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
         if obj.customer:
             return obj.customer.name
         return None
+
+    def get_payment_method_display(self, obj):
+        """Return payment method from the latest payment, or payment_type, or payment_status"""
+        # Get the latest payment's mode
+        payments = obj.payments.all()
+        latest_payment = payments.order_by('-received_at').first() if payments else None
+        
+        if latest_payment and latest_payment.mode:
+            # Return the payment mode (CASH, UPI, etc.)
+            return latest_payment.mode.upper()
+        # Fallback to payment_type if available
+        if obj.payment_type and hasattr(obj.payment_type, 'type'):
+            return obj.payment_type.type.upper()
+        # Fallback to payment_status (PAID, PARTIAL, CREDIT)
+        return obj.payment_status if obj.payment_status else "CREDIT"
 
     class Meta:
         model = SalesInvoice
@@ -362,7 +378,7 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
                 # If post_invoice fails, re-raise the error
                 raise serializers.ValidationError(f"Failed to post invoice: {str(e)}")
             
-            # create payment record (this will auto-update payment status via save() hook)
+            # create payment record
             SalesPayment.objects.create(
                 sale_invoice=invoice,
                 mode=payment_method,
@@ -370,7 +386,9 @@ class SalesInvoiceSerializer(serializers.ModelSerializer):
                 received_by=self.context["request"].user
             )
             
-            # Refresh invoice to get updated payment status
+            # Explicitly update payment status (don't rely on save hook alone)
+            from apps.sales import services
+            services._update_payment_status(invoice)
             invoice.refresh_from_db()
 
             # set invoice's payment_type to the payment_method used (if not provided separately)
