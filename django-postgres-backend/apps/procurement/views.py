@@ -623,26 +623,61 @@ class PurchaseImportView(APIView):
                 return Response({"detail": f"Unsupported file type. File: {file_name or 'unknown'}, Detected: {ext or 'none'}. Supported types are: CSV, PDF, XLSX, XLS"}, status=400)
 
             # Create a temporary file on local filesystem (works on both local and Azure)
-            # Azure App Service has a temp directory at /tmp or /local/temp
-            suffix = os.path.splitext(file_name)[1] or f'.{ext}'
+            # Python's tempfile module automatically uses the appropriate temp directory:
+            # - Local Windows: %TEMP% or %TMP% (usually C:\Users\...\AppData\Local\Temp)
+            # - Local Linux/Mac: /tmp
+            # - Azure App Service (Linux): /tmp (writable temp directory)
+            # The tempfile module handles all this automatically - no need to specify a path
+            suffix = f'.{ext}' if not file_name or '.' not in file_name else os.path.splitext(file_name)[1]
             try:
-                # Create temporary file with appropriate suffix
-                suffix = f'.{ext}' if not file_name or '.' not in file_name else os.path.splitext(file_name)[1]
-                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode='wb') as tmp_file:
-                    # Read and write the uploaded file content to temporary file
-                    for chunk in file.chunks():
-                        tmp_file.write(chunk)
-                    tmp_file_path = tmp_file.name
+                # Use mkstemp for better control - it returns (file_descriptor, file_path)
+                # This works reliably on both local and Azure
+                temp_dir = tempfile.gettempdir()  # Gets the temp directory automatically
+                logger.info(f"Creating temp file in directory: {temp_dir}")
+                
+                tmp_fd, tmp_file_path = tempfile.mkstemp(suffix=suffix, dir=temp_dir)
+                try:
+                    # Write file content using the file descriptor
+                    with os.fdopen(tmp_fd, 'wb') as tmp_file:
+                        bytes_written = 0
+                        for chunk in file.chunks():
+                            tmp_file.write(chunk)
+                            bytes_written += len(chunk)
+                        tmp_file.flush()  # Ensure all data is written
+                    logger.info(f"Temporary file created: {tmp_file_path}, size: {bytes_written} bytes")
                     
-                # Verify the file was written
-                if not os.path.exists(tmp_file_path):
-                    return Response({"detail": "Failed to save uploaded file. Please try again."}, status=500)
-                file_size = os.path.getsize(tmp_file_path)
-                if file_size == 0:
-                    return Response({"detail": "Uploaded file is empty. Please ensure the file contains data."}, status=400)
+                    # Verify the file was written
+                    if not os.path.exists(tmp_file_path):
+                        return Response({"detail": "Failed to save uploaded file. Please try again."}, status=500)
+                    file_size = os.path.getsize(tmp_file_path)
+                    if file_size == 0:
+                        return Response({"detail": "Uploaded file is empty. Please ensure the file contains data."}, status=400)
+                    if file_size != bytes_written:
+                        logger.warning(f"File size mismatch: expected {bytes_written}, got {file_size}")
+                except Exception as write_error:
+                    # If writing failed, close the file descriptor and clean up
+                    try:
+                        os.close(tmp_fd)
+                    except:
+                        pass
+                    if os.path.exists(tmp_file_path):
+                        try:
+                            os.unlink(tmp_file_path)
+                        except:
+                            pass
+                    raise write_error
+            except PermissionError as perm_error:
+                logger.error(f"Permission error creating temp file in {tempfile.gettempdir()}: {perm_error}", exc_info=True)
+                return Response({
+                    "detail": f"Permission error accessing temp directory ({tempfile.gettempdir()}). Please contact administrator."
+                }, status=500)
             except Exception as file_error:
                 logger.error(f"Error creating temporary file: {file_error}", exc_info=True)
-                return Response({"detail": f"Failed to process uploaded file: {str(file_error)}"}, status=500)
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return Response({
+                    "detail": f"Failed to process uploaded file: {str(file_error)}. Temp dir: {tempfile.gettempdir()}"
+                }, status=500)
 
             # Process file based on type
             try:
