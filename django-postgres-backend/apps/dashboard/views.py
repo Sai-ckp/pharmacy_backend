@@ -81,8 +81,32 @@ class DashboardSummaryView(BaseDashboardView):
         today_qs = SalesInvoice.objects.filter(
             status=SalesInvoice.Status.POSTED, invoice_date__date=today
         )
+        if location_id:
+            today_qs = today_qs.filter(location_id=location_id)
+        
         today_sales_amount = today_qs.aggregate(total=Sum("net_total")).get("total") or Decimal("0")
         today_sales_count = today_qs.count()
+        
+        # Calculate today's profit: (selling_price - cost_price) * quantity for each line
+        today_profit = Decimal("0")
+        today_invoice_ids = today_qs.values_list("id", flat=True)
+        if today_invoice_ids:
+            from apps.sales.models import SalesLine
+            today_lines = SalesLine.objects.filter(
+                sale_invoice_id__in=today_invoice_ids
+            ).select_related("batch_lot")
+            
+            for line in today_lines:
+                selling_price = Decimal(line.rate_per_base)
+                cost_price = Decimal(line.batch_lot.purchase_price_per_base or 0)
+                quantity = Decimal(line.qty_base)
+                line_profit = (selling_price - cost_price) * quantity
+                today_profit += line_profit
+        
+        # Calculate profit margin percentage
+        profit_margin = None
+        if today_sales_amount > 0:
+            profit_margin = float((today_profit / today_sales_amount) * 100)
 
         pending_qs = SalesInvoice.objects.filter(
             status=SalesInvoice.Status.POSTED, outstanding__gt=0
@@ -101,6 +125,8 @@ class DashboardSummaryView(BaseDashboardView):
             "sales": {
                 "today_amount": str(today_sales_amount),
                 "today_bills": today_sales_count,
+                "today_profit": str(today_profit),
+                "profit_margin": round(profit_margin, 2) if profit_margin is not None else None,
                 "pending_bills": pending_bills,
                 "pending_amount": str(pending_amount),
             },
@@ -151,15 +177,35 @@ class MonthlyChartView(BaseDashboardView):
     @extend_schema(
         tags=["Dashboard"],
         summary="Monthly sales and purchase totals",
+        parameters=[
+            OpenApiParameter(
+                "location_id",
+                OpenApiTypes.INT,
+                OpenApiParameter.QUERY,
+                description="Optional location context",
+            )
+        ],
         responses={200: OpenApiTypes.OBJECT},
     )
     def get(self, request):
+        try:
+            location_id = self._resolve_location_id(request)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        
         months = self._month_sequence(6)
         start_date = months[0]
+        
+        # Sales query with location filtering
+        sales_qs = SalesInvoice.objects.filter(
+            status=SalesInvoice.Status.POSTED, 
+            invoice_date__date__gte=start_date
+        )
+        if location_id:
+            sales_qs = sales_qs.filter(location_id=location_id)
+        
         sales_rows = (
-            SalesInvoice.objects.filter(
-                status=SalesInvoice.Status.POSTED, invoice_date__date__gte=start_date
-            )
+            sales_qs
             .annotate(month=TruncMonth("invoice_date"))
             .values("month")
             .annotate(total=Sum("net_total"))
@@ -170,14 +216,19 @@ class MonthlyChartView(BaseDashboardView):
             if row.get("month")
         }
 
-        purchase_rows = (
-            Purchase.objects.annotate(
-                eff_date=Coalesce(
-                    "invoice_date",
-                    Cast("created_at", output_field=models.DateField()),
-                )
+        # Purchase query with location filtering
+        purchase_qs = Purchase.objects.annotate(
+            eff_date=Coalesce(
+                "invoice_date",
+                Cast("created_at", output_field=models.DateField()),
             )
-            .filter(eff_date__gte=start_date)
+        ).filter(eff_date__gte=start_date)
+        
+        if location_id:
+            purchase_qs = purchase_qs.filter(location_id=location_id)
+        
+        purchase_rows = (
+            purchase_qs
             .annotate(month=TruncMonth("eff_date"))
             .values("month")
             .annotate(total=Sum("net_total"))

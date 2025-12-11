@@ -321,6 +321,14 @@ def _create_or_update_product_from_payload(payload: dict, default_vendor_id=None
             )
             category_id = category_obj.id
 
+    # Handle rack_location - can be ID or None
+    rack_location_id = payload.get("rack_location") or payload.get("rack_location_id")
+    if rack_location_id:
+        try:
+            rack_location_id = int(rack_location_id)
+        except (ValueError, TypeError):
+            rack_location_id = None
+    
     fields = {
         "name": name,
         "generic_name": payload.get("generic_name"),
@@ -352,6 +360,27 @@ def _create_or_update_product_from_payload(payload: dict, default_vendor_id=None
         or payload.get("preferred_vendor_id")
         or default_vendor_id,
         "is_sensitive": payload.get("is_sensitive"),
+        "rack_location_id": rack_location_id,
+        # Packaging fields
+        "tablets_per_strip": payload.get("tablets_per_strip"),
+        "capsules_per_strip": payload.get("capsules_per_strip"),
+        "strips_per_box": payload.get("strips_per_box"),
+        "ml_per_bottle": _Decimal(str(payload.get("ml_per_bottle"))) if payload.get("ml_per_bottle") is not None else None,
+        "bottles_per_box": payload.get("bottles_per_box"),
+        "ml_per_vial": _Decimal(str(payload.get("ml_per_vial"))) if payload.get("ml_per_vial") is not None else None,
+        "vials_per_box": payload.get("vials_per_box"),
+        "grams_per_tube": _Decimal(str(payload.get("grams_per_tube"))) if payload.get("grams_per_tube") is not None else None,
+        "tubes_per_box": payload.get("tubes_per_box"),
+        "doses_per_inhaler": payload.get("doses_per_inhaler"),
+        "inhalers_per_box": payload.get("inhalers_per_box"),
+        "grams_per_sachet": _Decimal(str(payload.get("grams_per_sachet"))) if payload.get("grams_per_sachet") is not None else None,
+        "sachets_per_box": payload.get("sachets_per_box"),
+        "grams_per_bar": _Decimal(str(payload.get("grams_per_bar"))) if payload.get("grams_per_bar") is not None else None,
+        "bars_per_box": payload.get("bars_per_box"),
+        "pieces_per_pack": payload.get("pieces_per_pack"),
+        "packs_per_box": payload.get("packs_per_box"),
+        "pairs_per_pack": payload.get("pairs_per_pack"),
+        "grams_per_pack": _Decimal(str(payload.get("grams_per_pack"))) if payload.get("grams_per_pack") is not None else None,
     }
 
     if product:
@@ -397,6 +426,27 @@ def _create_or_update_product_from_payload(payload: dict, default_vendor_id=None
         storage_instructions=fields["storage_instructions"] or "",
         preferred_vendor_id=fields["preferred_vendor_id"],
         is_sensitive=bool(fields["is_sensitive"]),
+        rack_location_id=fields["rack_location_id"],
+        # Packaging fields
+        tablets_per_strip=fields["tablets_per_strip"],
+        capsules_per_strip=fields["capsules_per_strip"],
+        strips_per_box=fields["strips_per_box"],
+        ml_per_bottle=fields["ml_per_bottle"],
+        bottles_per_box=fields["bottles_per_box"],
+        ml_per_vial=fields["ml_per_vial"],
+        vials_per_box=fields["vials_per_box"],
+        grams_per_tube=fields["grams_per_tube"],
+        tubes_per_box=fields["tubes_per_box"],
+        doses_per_inhaler=fields["doses_per_inhaler"],
+        inhalers_per_box=fields["inhalers_per_box"],
+        grams_per_sachet=fields["grams_per_sachet"],
+        sachets_per_box=fields["sachets_per_box"],
+        grams_per_bar=fields["grams_per_bar"],
+        bars_per_box=fields["bars_per_box"],
+        pieces_per_pack=fields["pieces_per_pack"],
+        packs_per_box=fields["packs_per_box"],
+        pairs_per_pack=fields["pairs_per_pack"],
+        grams_per_pack=fields["grams_per_pack"],
         is_active=True,
     )
     return product
