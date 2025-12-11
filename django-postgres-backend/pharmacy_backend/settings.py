@@ -88,21 +88,53 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "insecure-default-change-me")
 DEBUG = os.environ.get("DEBUG", "True" if not IS_AZURE else "False").lower() == "true"
 
 # Read ALLOWED_HOSTS from environment variable
+# Detect Azure more reliably (check multiple indicators)
+azure_indicators = [
+    os.environ.get("WEBSITE_HOSTNAME"),  # Azure App Service sets this
+    os.environ.get("WEBSITE_SITE_NAME"),  # Azure App Service
+    os.environ.get("WEBSITE_RESOURCE_GROUP"),  # Azure App Service
+    os.environ.get("WEBSITE_INSTANCE_ID"),  # Azure App Service
+]
+
+IS_AZURE = IS_AZURE or any(azure_indicators)
+
 if IS_AZURE:
-    # Azure: Default includes localhost and Azure health probe IP
-    default_hosts = "localhost,127.0.0.1,169.254.130.3"
+    # Azure: Default includes localhost and Azure internal IP ranges
+    # Azure uses 169.254.x.x for internal health probes and load balancer checks
+    default_hosts = "localhost,127.0.0.1,*.azurewebsites.net"
+    
+    # Get ALLOWED_HOSTS from environment variable or use defaults
     allowed_hosts_str = os.environ.get("ALLOWED_HOSTS", default_hosts)
     ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_str.split(",") if h.strip()]
     
     # Add Azure website hostname if available (Azure sets WEBSITE_HOSTNAME)
     azure_hostname = os.environ.get("WEBSITE_HOSTNAME")
-    if azure_hostname and azure_hostname not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(azure_hostname)
+    if azure_hostname:
+        # Remove port if present (Azure sometimes includes port)
+        hostname_without_port = azure_hostname.split(":")[0]
+        if hostname_without_port not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(hostname_without_port)
+        
         # Also add the plain hostname without region suffix if it exists
-        if ".azurewebsites.net" in azure_hostname:
-            plain_hostname = azure_hostname.split(".")[0] + ".azurewebsites.net"
+        if ".azurewebsites.net" in hostname_without_port:
+            plain_hostname = hostname_without_port.split(".")[0] + ".azurewebsites.net"
             if plain_hostname not in ALLOWED_HOSTS:
                 ALLOWED_HOSTS.append(plain_hostname)
+    
+    # Allow Azure internal IPs (169.254.x.x range for health probes)
+    # Note: Django doesn't support wildcards in IPs, so we'll use a middleware workaround
+    # But for now, add common Azure probe IPs
+    azure_probe_ips = [
+        "169.254.130.1", "169.254.130.2", "169.254.130.3", "169.254.130.4",
+        "169.254.129.1", "169.254.129.2", "169.254.129.3", "169.254.129.4",
+    ]
+    for ip in azure_probe_ips:
+        if ip not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(ip)
+    
+    # In Azure, if DEBUG is True and no explicit ALLOWED_HOSTS is set, allow all for easier debugging
+    if DEBUG and not os.environ.get("ALLOWED_HOSTS"):
+        ALLOWED_HOSTS = ["*"]
 else:
     # Local development: Allow all hosts when DEBUG is True, otherwise use environment variable
     if DEBUG:
@@ -146,9 +178,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    'core.middleware.AzureInternalIPMiddleware',  # Handle Azure internal IPs before CommonMiddleware
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
