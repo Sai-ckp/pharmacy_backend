@@ -47,6 +47,7 @@ import openpyxl
 from decimal import Decimal
 import re
 import csv
+import os
 
 def extract_items_from_csv(file_content_or_path):
     """
@@ -98,15 +99,64 @@ def extract_items_from_csv(file_content_or_path):
     # Parse header
     header = rows[0].split(",")
 
-    # Build index map safely
-    idx = {col.strip(): i for i, col in enumerate(header)}
+    # Build index map safely (case-insensitive)
+    idx = {}
+    idx_lower = {}
+    for i, col in enumerate(header):
+        col_clean = col.strip()
+        idx[col_clean] = i
+        idx_lower[col_clean.lower()] = i
 
-    required_cols = ["ItemName", "InvQty", "SaleRate"]
+    # Flexible column name matching - try multiple variations
+    def find_column_index(possible_names):
+        """Find column index by trying multiple possible names (case-insensitive)"""
+        for name in possible_names:
+            # Try exact match first
+            if name in idx:
+                return idx[name]
+            # Try case-insensitive match
+            name_lower = name.lower()
+            if name_lower in idx_lower:
+                return idx_lower[name_lower]
+            # Try partial match (contains)
+            for col_name, col_idx in idx_lower.items():
+                if name_lower in col_name or col_name in name_lower:
+                    return col_idx
+        return None
 
-    for col in required_cols:
-        if col not in idx:
-            print("Missing column:", col)
-            return []   # cannot parse this CSV
+    # Find required columns with flexible matching
+    name_idx = find_column_index([
+        "ItemName", "itemname", "item_name", "Item Name", "Item", "Product Name", 
+        "ProductName", "product_name", "Name", "Medicine Name", "MedicineName",
+        "medicine name", "medicine_name", "Product", "product"
+    ])
+    qty_idx = find_column_index([
+        "InvQty", "invqty", "inv_qty", "Inv Qty", "Quantity", "Qty", "qty", 
+        "QTY", "quantity", "Qty Pack", "QtyPack", "qty_pack", "qty pack",
+        "Qty Packs", "qty_packs", "QtyPacks"
+    ])
+    rate_idx = find_column_index([
+        "SaleRate", "salerate", "sale_rate", "Sale Rate", "Rate", "rate", 
+        "RATE", "Price", "price", "Unit Price", "UnitPrice", "unit_price",
+        "Cost", "cost", "Unit Cost", "UnitCost", "unit_cost", "Sale Price",
+        "sale_price", "SalePrice"
+    ])
+
+    # Check if we found required columns
+    if name_idx is None or qty_idx is None or rate_idx is None:
+        # Try to provide helpful error message
+        available_cols = ', '.join([col.strip() for col in header])
+        missing = []
+        if name_idx is None:
+            missing.append("item name")
+        if qty_idx is None:
+            missing.append("quantity")
+        if rate_idx is None:
+            missing.append("rate/price")
+        
+        print(f"Missing required columns: {', '.join(missing)}")
+        print(f"Available columns: {available_cols}")
+        return []   # cannot parse this CSV
 
     items = []
     for row in rows[1:]:
@@ -116,10 +166,11 @@ def extract_items_from_csv(file_content_or_path):
         parts = row.split(",")
 
         try:
-            name = parts[idx["ItemName"]].strip().strip('"')
-            qty = parts[idx["InvQty"]].strip()
-            rate = parts[idx["SaleRate"]].strip()
-        except Exception:
+            # Get values safely using the found indices
+            name = parts[name_idx].strip().strip('"').strip("'") if name_idx < len(parts) else ""
+            qty = parts[qty_idx].strip().strip('"').strip("'") if qty_idx < len(parts) else "0"
+            rate = parts[rate_idx].strip().strip('"').strip("'") if rate_idx < len(parts) else "0"
+        except (IndexError, AttributeError) as e:
             continue
 
         if name == "":

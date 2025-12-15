@@ -189,7 +189,35 @@ class VendorViewSet(viewsets.ModelViewSet):
 
         return Response(result)
 
-
+    def destroy(self, request, *args, **kwargs):
+        """
+        Custom destroy method to handle ProtectedError when vendor has related records.
+        """
+        instance = self.get_object()
+        
+        # Check for related records
+        has_purchases = Purchase.objects.filter(vendor=instance).exists()
+        has_purchase_orders = PurchaseOrder.objects.filter(vendor=instance).exists()
+        has_vendor_returns = VendorReturn.objects.filter(vendor=instance).exists()
+        
+        if has_purchases or has_purchase_orders or has_vendor_returns:
+            related_items = []
+            if has_purchases:
+                count = Purchase.objects.filter(vendor=instance).count()
+                related_items.append(f"{count} purchase(s)")
+            if has_purchase_orders:
+                count = PurchaseOrder.objects.filter(vendor=instance).count()
+                related_items.append(f"{count} purchase order(s)")
+            if has_vendor_returns:
+                count = VendorReturn.objects.filter(vendor=instance).count()
+                related_items.append(f"{count} vendor return(s)")
+            
+            return Response({
+                "detail": f"Cannot delete supplier. This supplier has related records: {', '.join(related_items)}. Please delete or reassign these records first."
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # No related records, safe to delete
+        return super().destroy(request, *args, **kwargs)
 
 
 class PurchaseViewSet(viewsets.ModelViewSet):
