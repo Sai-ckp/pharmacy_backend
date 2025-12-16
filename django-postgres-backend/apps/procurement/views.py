@@ -48,7 +48,7 @@ class HealthView(APIView):
 
 
 class VendorViewSet(viewsets.ModelViewSet):
-    queryset = Vendor.objects.all().order_by("name")
+    queryset = Vendor.objects.filter(is_active=True).order_by("name")
     serializer_class = VendorSerializer
 
     # -----------------------------
@@ -191,86 +191,25 @@ class VendorViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """
-        Custom destroy method to delete vendor and all related records (cascade delete).
-        Deletes: VendorReturns, PurchaseOrders (and their lines, GRNs), Purchases (and their lines).
+        Soft delete method: sets is_active=False instead of deleting the vendor.
+        All related records (purchases, purchase orders, etc.) are preserved.
         """
         try:
             instance = self.get_object()
             
-            # Use transaction to ensure atomicity
-            with transaction.atomic():
-                # Count related records for logging/response
-                vendor_returns_count = VendorReturn.objects.filter(vendor=instance).count()
-                purchase_orders_count = PurchaseOrder.objects.filter(vendor=instance).count()
-                purchases_count = Purchase.objects.filter(vendor=instance).count()
-                
-                deleted_counts = []
-                
-                # 1. Delete VendorReturns first (they reference PurchaseLine which we'll delete later, but PROTECT prevents it)
-                if vendor_returns_count > 0:
-                    VendorReturn.objects.filter(vendor=instance).delete()
-                    deleted_counts.append(f"{vendor_returns_count} vendor return(s)")
-                
-                # 2. Delete PurchaseOrders and related records
-                # Note: GoodsReceipt references PurchaseOrder with PROTECT
-                # GoodsReceiptLine references PurchaseOrderLine with PROTECT
-                # So we need to delete in this order: GoodsReceiptLines -> GoodsReceipts -> PurchaseOrderLines -> PurchaseOrders
-                if purchase_orders_count > 0:
-                    # Get all PO IDs before deletion
-                    po_ids = list(PurchaseOrder.objects.filter(vendor=instance).values_list('id', flat=True))
-                    
-                    # Get all PurchaseOrderLine IDs for these POs
-                    po_line_ids = list(PurchaseOrderLine.objects.filter(po_id__in=po_ids).values_list('id', flat=True))
-                    
-                    # Delete GoodsReceiptLines that reference these PurchaseOrderLines (PROTECT constraint)
-                    grn_line_count = GoodsReceiptLine.objects.filter(po_line_id__in=po_line_ids).count()
-                    if grn_line_count > 0:
-                        GoodsReceiptLine.objects.filter(po_line_id__in=po_line_ids).delete()
-                    
-                    # Delete GoodsReceipts that reference these PurchaseOrders (PROTECT constraint)
-                    grn_count = GoodsReceipt.objects.filter(po_id__in=po_ids).count()
-                    if grn_count > 0:
-                        GoodsReceipt.objects.filter(po_id__in=po_ids).delete()
-                    
-                    # Now delete PurchaseOrders (cascades to PurchaseOrderLines via CASCADE)
-                    PurchaseOrder.objects.filter(vendor=instance).delete()
-                    deleted_counts.append(f"{purchase_orders_count} purchase order(s)")
-                    if grn_count > 0:
-                        deleted_counts.append(f"{grn_count} goods receipt(s)")
-                    if grn_line_count > 0:
-                        deleted_counts.append(f"{grn_line_count} goods receipt line(s)")
-                
-                # 3. Delete Purchases (this will cascade to PurchaseLines and PurchasePayments via CASCADE)
-                if purchases_count > 0:
-                    Purchase.objects.filter(vendor=instance).delete()
-                    deleted_counts.append(f"{purchases_count} purchase(s)")
-                
-                # 4. Finally, delete the vendor itself
-                instance.delete()
-            
-            # Success response with details of what was deleted
-            message = "Supplier deleted successfully."
-            if deleted_counts:
-                message += f" Also deleted: {', '.join(deleted_counts)}."
+            # Soft delete: set is_active to False
+            instance.is_active = False
+            instance.save(update_fields=['is_active'])
             
             return Response({
-                "detail": message
+                "detail": "Supplier disabled successfully. All related records have been preserved."
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
             # Catch any unexpected errors
-            logger.error(f"Error deleting vendor {kwargs.get('pk')}: {str(e)}", exc_info=True)
-            
-            # Check if it's a ProtectedError (database constraint from other models we didn't handle)
             error_msg = str(e)
-            if "protected" in error_msg.lower() or "foreign key" in error_msg.lower():
-                return Response({
-                    "detail": f"Cannot delete supplier due to database constraints: {error_msg}. Please check for other related records."
-                }, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Generic error
             return Response({
-                "detail": f"Error deleting supplier: {error_msg}"
+                "detail": f"Error disabling supplier: {error_msg}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
